@@ -5,13 +5,6 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma/prisma.service';
 
-// ConfigModule validates DATABASE_URL when AppModule initializes (see
-// app.module.ts). PrismaService is overridden below so no real connection is
-// made; this dummy value only satisfies validation in environments without
-// env files (e.g. CI).
-process.env.DATABASE_URL ??=
-  'postgresql://postgres:postgres@localhost:5432/unstack-learning';
-
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 

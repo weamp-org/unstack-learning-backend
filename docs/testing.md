@@ -208,3 +208,4 @@ it('GET /api/v1', () => {
 - Always call `await app.close()` in `afterAll` to clean up
 - Override any provider that makes external connections (database, Clerk API)
 - Set up the global prefix in tests if the app uses one, or the routes will 404
+- Importing `AppModule` triggers `ConfigModule` validation; `test/setup-e2e.ts` (wired via `setupFiles` in `jest-e2e.json`) provides a dummy `DATABASE_URL` for environments without env files
