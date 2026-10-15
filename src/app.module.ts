@@ -20,6 +20,15 @@ import { WebhooksModule } from './webhooks/webhooks.module.js';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
+      // Runs before any provider (e.g. PrismaService) is constructed, so a
+      // missing DATABASE_URL fails here with the custom message instead of
+      // surfacing later from a provider constructor.
+      validate: (config: Record<string, unknown>) => {
+        if (!config['DATABASE_URL']) {
+          throw new Error('DATABASE_URL environment variable is not set');
+        }
+        return config;
+      },
     }),
     ThrottlerModule.forRoot([
       {

@@ -21,12 +21,9 @@ async function bootstrap() {
   const isProduction = nodeEnv === 'production';
 
   // Fail fast on missing configuration. Local development keeps working
-  // with the localhost defaults from `.env.local.example`.
-  const databaseUrl = configService.get<string>('DATABASE_URL');
-  if (!databaseUrl) {
-    throw new Error('DATABASE_URL environment variable is not set');
-  }
-
+  // with the localhost defaults from `.env.local.example`. DATABASE_URL is
+  // validated in ConfigModule.forRoot (see app.module.ts) because providers
+  // are constructed before this function continues.
   if (isProduction) {
     for (const key of [
       'CLERK_PUBLISHABLE_KEY',
