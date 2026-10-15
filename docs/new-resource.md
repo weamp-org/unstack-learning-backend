@@ -212,7 +212,6 @@ Make sure `PostsModule` is imported in `AppModule` (`src/app.module.ts`):
     ConfigModule.forRoot({ ... }),
     ThrottlerModule.forRoot({ ... }),
     PrismaModule,
-    UsersModule,
     WebhooksModule,
     PostsModule,          // ← add this line
   ],

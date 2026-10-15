@@ -23,7 +23,8 @@ datasource db {
 }
 
 enum UserRole {
-  USER
+  STUDENT
+  TEACHER
   ADMIN
 }
 
@@ -31,7 +32,7 @@ model User {
   id    String   @id
   name  String
   email String   @unique
-  role  UserRole @default(USER)
+  role  UserRole @default(STUDENT)
 }
 ```
 

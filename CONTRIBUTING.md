@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to the NestJS template.
+Thanks for your interest in contributing to Unstack Learning.
 
 ## Prerequisites
 

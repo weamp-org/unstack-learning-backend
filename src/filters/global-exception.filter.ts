@@ -49,18 +49,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           : 'Bad Request';
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
-      message =
-        exception instanceof Error
-          ? exception.message
-          : 'Internal server error';
+      // Never expose internal details (DB errors, Clerk failures, stack
+      // contents) to clients; the full exception is logged below.
+      message = 'Internal server error';
       error = 'Internal Server Error';
     }
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      const diagnostic =
+        exception instanceof Error ? exception.message : String(exception);
       this.logger.error(
-        `${request.method} ${request.url} ${status} — ${message}`,
+        `${request.method} ${request.url} ${status} — ${diagnostic}`,
         exception instanceof Error ? exception.stack : undefined,
       );
+      // Never expose internal details (DB errors, Clerk failures, stack
+      // contents) to clients.
+      message = 'Internal server error';
+      error = 'Internal Server Error';
     } else {
       this.logger.warn(
         `${request.method} ${request.url} ${status} — ${message}`,

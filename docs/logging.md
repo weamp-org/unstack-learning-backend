@@ -59,11 +59,11 @@ requested.
 
 With both middlewares mounted on `/api/v1/{*path}`:
 
-| Request                 | `req.url` | `req.originalUrl`   |
-| ----------------------- | --------- | ------------------- |
-| `GET /api/v1/`          | `/`       | `/api/v1/`          |
-| `GET /api/v1/users`     | `/users`  | `/api/v1/users`     |
-| `GET /api/v1/users?x=1` | `/?x=1`   | `/api/v1/users?x=1` |
+| Request                      | `req.url`         | `req.originalUrl`        |
+| ---------------------------- | ----------------- | ------------------------ |
+| `GET /api/v1/`               | `/`               | `/api/v1/`               |
+| `GET /api/v1/webhooks/clerk` | `/webhooks/clerk` | `/api/v1/webhooks/clerk` |
+| `GET /api/v1/posts?x=1`      | `/posts?x=1`      | `/api/v1/posts?x=1`      |
 
 Any predicate that matches on the request path — `autoLogging.ignore`,
 `LoggerModule`'s `exclude`, or your own — must read `originalUrl`.
@@ -121,16 +121,16 @@ passes the whole suite. Check it against a running server:
 
 ```bash
 pnpm build
-PORT=3999 node dist/src/main.js &
+PORT=3999 node dist/src/main &
 sleep 5
 curl -s -o /dev/null "http://localhost:3999/api/v1/"
-curl -s -o /dev/null "http://localhost:3999/api/v1/users"
-curl -s -D - -o /dev/null "http://localhost:3999/api/v1/users" | grep -i x-request-id
+curl -s -o /dev/null "http://localhost:3999/api/v1/webhooks/clerk"
+curl -s -D - -o /dev/null "http://localhost:3999/api/v1/webhooks/clerk" | grep -i x-request-id
 kill %1
 ```
 
 Then confirm in the server's stdout:
 
 - `GET /api/v1/` produces no log line (health check, excluded by design)
-- `GET /api/v1/users` produces one `request completed` line and an `x-request-id` header
+- `GET /api/v1/webhooks/clerk` produces one `request completed` line and an `x-request-id` header (the route 404s on GET, which is fine — the point is the logging path)
 - no `Unsupported route path` warning appeared during startup

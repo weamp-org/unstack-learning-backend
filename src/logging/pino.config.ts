@@ -67,7 +67,7 @@ export const pinoConfig: Params = {
       // This reads `originalUrl`, not `url`. Express strips the matched mount
       // prefix from `url`, so inside middleware mounted on `/api/v1/{*path}`
       // the health check reports `url === '/'` and every other route reports
-      // `/users`, `/webhooks/...` and so on. `originalUrl` is the untouched
+      // its sub-path (`/webhooks/...` and so on). `originalUrl` is the untouched
       // request path. The previous `req.url === '/api/v1/health'` could never
       // match: that route does not exist, and `url` would not have held that
       // value here either. The query string is stripped since uptime probes
