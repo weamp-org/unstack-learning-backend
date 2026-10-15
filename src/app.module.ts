@@ -12,7 +12,6 @@ import { LoggingMiddleware } from './logging/logging.middleware.js';
 import { pinoConfig } from './logging/pino.config.js';
 import { ALL_ROUTES } from './logging/routes.js';
 import { PrismaModule } from './prisma/prisma.module.js';
-import { UsersModule } from './users/users.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 
 @Module({
@@ -25,13 +24,16 @@ import { WebhooksModule } from './webhooks/webhooks.module.js';
     ThrottlerModule.forRoot([
       {
         ttl: 60_000, // 1 minute
-        limit: 100, // 100 requests per minute for general endpoints
-        getTracker: (req: { user: { id: string }; ip: string }) =>
-          req.user?.id ?? req.ip,
+        limit: 100, // 100 requests per minute per client
+        // Clerk's middleware attaches the session to `req.auth` (see
+        // `getAuth(request)` in the guards); there is no `req.user`.
+        // Authenticated requests are tracked by Clerk user ID, anonymous
+        // ones fall back to IP.
+        getTracker: (req: { auth?: { userId?: string | null }; ip: string }) =>
+          req.auth?.userId ?? req.ip,
       },
     ]),
     PrismaModule,
-    UsersModule,
     WebhooksModule,
   ],
   controllers: [AppController],

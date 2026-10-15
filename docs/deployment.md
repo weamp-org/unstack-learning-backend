@@ -1,10 +1,10 @@
-# Deployment
+# Deployment (Render)
 
 ## Prerequisites
 
 - Node.js 24+
 - pnpm 11.2.2
-- A PostgreSQL database (see [prisma.md](prisma.md) for connection details)
+- A PostgreSQL database (Render Postgres; local development uses `compose.yaml`)
 - A Clerk application with API keys configured
 
 ---
@@ -13,17 +13,20 @@
 
 Ensure these variables are set in production:
 
-| Variable                       | Required | Notes                                   |
-| ------------------------------ | -------- | --------------------------------------- |
-| `DATABASE_URL`                 | Yes      | Production PostgreSQL connection string |
-| `CLERK_PUBLISHABLE_KEY`        | Yes      | From Clerk Dashboard → API Keys         |
-| `CLERK_SECRET_KEY`             | Yes      | From Clerk Dashboard → API Keys         |
-| `CLERK_WEBHOOK_SIGNING_SECRET` | Yes\*    | Required only if using Clerk webhooks   |
-| `FRONTEND_BASE_URL`            | Yes      | Your frontend domain (CORS origin)      |
-| `PORT`                         | No       | Defaults to `3000`                      |
-| `NODE_ENV`                     | No       | Set to `production` to disable Swagger  |
+| Variable                       | Required | Notes                                                          |
+| ------------------------------ | -------- | -------------------------------------------------------------- |
+| `DATABASE_URL`                 | Yes      | Production PostgreSQL connection string (Render Postgres)      |
+| `CLERK_PUBLISHABLE_KEY`        | Yes      | From Clerk Dashboard → API Keys                                |
+| `CLERK_SECRET_KEY`             | Yes      | From Clerk Dashboard → API Keys                                |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | Yes      | Required for the Clerk webhook flow                            |
+| `FRONTEND_BASE_URL`            | Yes      | Your Vercel frontend domain (CORS origin); enforced at startup |
+| `PORT`                         | No       | Set automatically by Render; defaults to `3000` locally        |
+| `NODE_ENV`                     | No       | Set to `production` to disable Swagger                         |
+| `LOG_LEVEL`                    | No       | Pino log level (`info` in production, `debug` otherwise)       |
 
-\* Only needed if you use Clerk webhooks. Without it, the webhook endpoint will reject requests with signature verification errors.
+The server fails fast at startup when `DATABASE_URL` is missing, or when any
+of `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, or `FRONTEND_BASE_URL` is
+missing in production.
 
 ---
 
@@ -60,12 +63,13 @@ Prisma CLI from `devDependencies`.
 
 ## Platform notes
 
-This template is **platform-agnostic**. It compiles to plain JavaScript in `dist/` and runs as a standard Node.js process. Deploy anywhere that supports Node.js 24:
+The backend deploys to **Render** as a standard Node.js web service
+(`dist/` output, `node dist/src/main` entrypoint):
 
-- **Railway / Render / Fly.io** — Set build command to `pnpm build` and start command to `pnpm start:prod`
-- **AWS ECS / Fargate** — Build into a Docker image, set entrypoint to `node dist/src/main`
-- **Kubernetes** — Standard deployment with env vars from secrets
-- **VPS** — Use `pm2` or `systemd` to manage the process
+- **Build command** — `pnpm install --frozen-lockfile && pnpm prisma generate && pnpm build`
+- **Start command** — `pnpm start:prod` (runs `prisma migrate deploy` first, or set a pre-deploy command to `pnpm prisma migrate deploy`)
+- **Database** — Render Postgres, wired via `DATABASE_URL`
+- **Local development** — `compose.yaml` runs PostgreSQL 18 via Docker; production uses the hosted database above, not Compose
 
 ### Docker
 
@@ -92,7 +96,7 @@ CMD ["node", "dist/src/main"]
 GET /api/v1
 ```
 
-Returns `200 OK` with `Hello World!`. Use this as your health check endpoint.
+Returns `200 OK` with `{ "status": "ok", "service": "unstack-learning-backend" }`. Use this as your Render health check path (`/api/v1`).
 
 ---
 

@@ -1,15 +1,15 @@
-# NestJS Template
+# Unstack Learning Backend
 
-A production-ready [NestJS](https://nestjs.com/) 11 backend template with Clerk authentication, Prisma ORM, role-based access control, and pre-commit lint-staged hooks.
+The [NestJS](https://nestjs.com/) 11 API for Unstack Learning, with Clerk authentication, Prisma ORM, role-based access control, and pre-commit lint-staged hooks.
 
 ## Features
 
-- **Authentication** — Clerk-powered via `@clerk/express` with global middleware, configurable guards, and auto-provisioning of local user records on first sign-in
-- **Authorization** — Role-based access control with `@Roles()` decorator and `RolesGuard` (`USER` / `ADMIN` roles)
+- **Authentication** — Clerk-powered via `@clerk/express` with global middleware, guards, and auto-provisioning of local user records on first sign-in
+- **Authorization** — Role-based access control with `@Roles()` decorator and `RolesGuard` (`STUDENT` / `TEACHER` / `ADMIN` roles)
 - **Database** — Prisma v7 with PostgreSQL via `@prisma/adapter-pg`, auto-generated typed client, migration workflow
-- **REST API** — Global `/api/v1` prefix, full CRUD scaffold for users, `ValidationPipe` with whitelist/transform (with implicit conversion)
+- **REST API** — Global `/api/v1` prefix, public health endpoint, `ValidationPipe` with whitelist/transform (with implicit conversion)
 - **Webhooks** — Clerk webhook handler for `user.created` / `user.updated` / `user.deleted` events with signature verification
-- **Rate Limiting** — `@nestjs/throttler`, 100 requests/min per user
+- **Rate Limiting** — `@nestjs/throttler`, 100 requests/min per authenticated user (IP fallback for anonymous traffic)
 - **Logging** — Structured JSON logging with `nestjs-pino`, request/response auto-logging, request ID propagation, sensitive header redaction, and a global exception filter
 - **Documentation** — Swagger UI at `/api/v1/documentation` (dev only), auto-generated from decorators and JSDoc
 - **Testing** — Jest unit tests (with mocked Prisma) and Supertest e2e tests
@@ -60,7 +60,7 @@ services:
   postgres:
     image: postgres:18
     environment:
-      POSTGRES_DB: nestjs-template
+      POSTGRES_DB: unstack-learning
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:
       - postgres_password
@@ -79,47 +79,44 @@ secrets:
 
 1. Copy the example to create your secret file: `cp secrets/postgres_password.txt.example secrets/postgres_password.txt`
 2. Edit the password to your desired value
-3. Ensure the `DATABASE_URL` in `.env.local` uses the same password — e.g. `postgresql://postgres:your-password-here@localhost:5432/nestjs-template`
+3. Ensure the `DATABASE_URL` in `.env.local` uses the same password — e.g. `postgresql://postgres:your-password-here@localhost:5432/unstack-learning`
+
+> **Note:** `POSTGRES_DB` only takes effect when the volume is first initialized. If your local `postgres-data` volume was created before the rename from `nestjs-template`, either create the `unstack-learning` database manually (`CREATE DATABASE "unstack-learning";`) or, if the volume holds no valuable data, recreate it with `docker compose down -v && docker compose up -d`. Production (Render) only uses `DATABASE_URL`.
 
 > **Note:** The `secrets/` directory is gitignored. Only the `*.example` file is tracked in version control.
 
 ## Project structure
 
 ```text
-nestjs-template/
-├── compose.yaml                    # Docker Compose (PostgreSQL 18)
+unstack-learning-backend/
+├── compose.yaml                    # Docker Compose (PostgreSQL 18, local dev)
 ├── prisma.config.ts                # Prisma config (dotenv + defineConfig)
 ├── prisma/
 │   ├── schema.prisma               # Database schema (User model, UserRole enum)
 │   └── migrations/                 # Migration history
 ├── src/
-│   ├── main.ts                     # Entry point (global prefix, Clerk, CORS, Swagger, ValidationPipe)
+│   ├── main.ts                     # Entry point (env validation, global prefix, Clerk, CORS, Swagger, ValidationPipe)
 │   ├── app.module.ts               # Root module (imports all features)
-│   ├── app.controller.ts           # Root controller (GET /api/v1)
-│   ├── app.service.ts              # Root service
+│   ├── app.controller.ts           # Public health endpoint (GET /api/v1)
+│   ├── app.service.ts              # Health service
 │   ├── clerk-auth/
-│   │   └── clerk-auth.guard.ts     # Clerk authentication guard
+│   │   └── clerk-auth.guard.ts     # Clerk authentication guard (auto-provisions users as STUDENT)
 │   ├── public/
 │   │   └── public.decorator.ts     # @Public() — bypass auth on routes
 │   ├── roles/
 │   │   ├── roles.decorator.ts      # @Roles() — require specific roles
 │   │   └── roles.guard.ts          # Roles authorization guard
+│   ├── user-clerk-id/
+│   │   └── user-clerk-id.decorator.ts # @UserClerkId() — current Clerk user ID param
 │   ├── logging/
 │   │   ├── pino.config.ts         # Pino configuration (structured JSON, redaction, serializers)
 │   │   ├── logging.middleware.ts  # Request ID propagation to response header
 │   │   └── routes.ts              # ALL_ROUTES wildcard shared by both middlewares
 │   ├── filters/
-│   │   └── global-exception.filter.ts # Global exception filter with Prisma error translation
+│   │   └── global-exception.filter.ts # Global exception filter (Prisma translation, sanitized 5xx)
 │   ├── prisma/
 │   │   ├── prisma.module.ts        # Global Prisma module
 │   │   └── prisma.service.ts       # PrismaClient with adapter-pg
-│   ├── users/
-│   │   ├── users.module.ts
-│   │   ├── users.controller.ts     # CRUD: /api/v1/users
-│   │   ├── users.service.ts
-│   │   └── dtos/
-│   │       ├── create-user.dto.ts
-│   │       └── update-user.dto.ts
 │   └── webhooks/
 │       ├── webhooks.module.ts
 │       ├── webhooks.controller.ts  # POST /api/v1/webhooks/clerk
@@ -135,14 +132,19 @@ nestjs-template/
 
 The template uses two env files loaded in order: `.env.local` (local overrides, gitignored) then `.env` (shared defaults, gitignored). Copy the example file to get started:
 
-| Variable                       | Required | Default                 | Description                                                                                         |
-| ------------------------------ | -------- | ----------------------- | --------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                 | Yes      | —                       | PostgreSQL connection string (e.g. `postgresql://postgres:postgres@localhost:5432/nestjs-template`) |
-| `CLERK_PUBLISHABLE_KEY`        | Yes      | —                       | Clerk publishable API key                                                                           |
-| `CLERK_SECRET_KEY`             | Yes      | —                       | Clerk secret API key                                                                                |
-| `CLERK_WEBHOOK_SIGNING_SECRET` | No       | —                       | Clerk webhook signing secret (required for webhook verification)                                    |
-| `FRONTEND_BASE_URL`            | No       | `http://localhost:3001` | Allowed CORS origin                                                                                 |
-| `PORT`                         | No       | `3000`                  | Application port                                                                                    |
+| Variable                       | Required | Default                 | Description                                                                                          |
+| ------------------------------ | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                 | Yes      | —                       | PostgreSQL connection string (e.g. `postgresql://postgres:postgres@localhost:5432/unstack-learning`) |
+| `CLERK_PUBLISHABLE_KEY`        | Yes      | —                       | Clerk publishable API key                                                                            |
+| `CLERK_SECRET_KEY`             | Yes      | —                       | Clerk secret API key                                                                                 |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | Yes\*    | —                       | Clerk webhook signing secret (required for webhook verification)                                     |
+| `FRONTEND_BASE_URL`            | Yes†     | `http://localhost:3001` | Allowed CORS origin (must be set in production)                                                      |
+| `PORT`                         | No       | `3000`                  | Application port                                                                                     |
+| `NODE_ENV`                     | No       | `development`           | Set to `production` to disable Swagger                                                               |
+| `LOG_LEVEL`                    | No       | `info`/`debug`          | Pino log level (`info` in production, `debug` otherwise)                                             |
+
+\* Required for the Clerk webhook flow, which keeps the local `User` table in sync.
+† Enforced at startup in production; falls back to `http://localhost:3001` with a warning otherwise.
 
 ## Scripts
 
@@ -167,24 +169,25 @@ The template uses two env files loaded in order: `.env.local` (local overrides, 
 
 All endpoints are prefixed with `/api/v1`.
 
-| Method   | Path              | Auth                   | Description          |
-| -------- | ----------------- | ---------------------- | -------------------- |
-| `GET`    | `/`               | Public                 | Health check         |
-| `GET`    | `/users`          | Public                 | List all users       |
-| `GET`    | `/users/:id`      | Public                 | Get user by ID       |
-| `POST`   | `/users`          | Authenticated          | Create a user        |
-| `PATCH`  | `/users/:id`      | Authenticated          | Update a user        |
-| `DELETE` | `/users/:id`      | Admin only             | Delete a user        |
-| `POST`   | `/webhooks/clerk` | Public (skip throttle) | Clerk webhook events |
+| Method | Path              | Auth                                       | Description                 |
+| ------ | ----------------- | ------------------------------------------ | --------------------------- |
+| `GET`  | `/`               | Public                                     | Health check (`{ status }`) |
+| `POST` | `/webhooks/clerk` | Public (signature-verified, skip throttle) | Clerk webhook events        |
+
+There are no user-management endpoints: local `User` records are created and
+synced automatically by `ClerkAuthGuard` (on first authenticated request,
+default role `STUDENT`) and the Clerk webhook handler. Roles are assigned
+out-of-band (database or Clerk dashboard) — no API accepts a `role` field, so
+users cannot escalate themselves to `TEACHER` or `ADMIN`.
 
 ## Auth model
 
-The template implements a layered auth strategy:
+The API implements a layered auth strategy:
 
 1. **Global middleware** — `clerkMiddleware()` from `@clerk/express` runs on every request, parsing the session JWT and attaching user identity to `req.auth`
-2. **Guard layer** — `ClerkAuthGuard` on controllers rejects unauthenticated requests. It also **auto-provisions** a local `User` record on first sign-in: if the Clerk user ID isn't in your database, it fetches the user from the Clerk API and inserts them
-3. **Bypass** — `@Public()` decorator skips the guard for public routes
-4. **RBAC** — `@Roles(UserRole.ADMIN)` decorator combined with `RolesGuard` restricts endpoints to specific roles. `RolesGuard` checks `@Public()` first, then verifies the user's role from the local database
+2. **Guard layer** — `ClerkAuthGuard` (applied per controller via `@UseGuards`) rejects unauthenticated requests. It also **auto-provisions** a local `User` record on first sign-in: if the Clerk user ID isn't in your database, it fetches the user from the Clerk API and inserts them with the default `STUDENT` role
+3. **Bypass** — `@Public()` decorator skips the guard for public routes (health check, webhooks)
+4. **RBAC** — `@Roles(...)` decorator combined with `RolesGuard` restricts endpoints to specific roles (`STUDENT` / `TEACHER` / `ADMIN`). `RolesGuard` checks `@Public()` first, then verifies the user's role from the local database
 
 See [docs/auth.md](docs/auth.md) for a detailed walkthrough.
 

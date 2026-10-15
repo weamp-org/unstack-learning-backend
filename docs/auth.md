@@ -27,7 +27,7 @@ The middleware does **not** reject unauthenticated requests — it only parses w
 
 ## Layer 2 — `ClerkAuthGuard` (controller-level)
 
-`ClerkAuthGuard` is applied to controllers (e.g. `@UseGuards(ClerkAuthGuard)` on `UsersController`).
+`ClerkAuthGuard` is applied per controller (e.g. `@UseGuards(ClerkAuthGuard, RolesGuard)`).
 
 ### Guard logic (`src/clerk-auth/clerk-auth.guard.ts`)
 
@@ -40,7 +40,7 @@ request → is @Public()? → yes → allow
        → no → fetch user from Clerk API → create local User record → allow
 ```
 
-**Auto-provisioning detail:** When a user authenticates for the first time, their Clerk user ID isn't in your database. The guard fetches the user from Clerk via `clerkClient.users.getUser(userId)`, extracts `fullName` (or `username`) and `primaryEmailAddress`, and creates a local `User` record with role `USER`. Subsequent requests hit the database directly.
+**Auto-provisioning detail:** When a user authenticates for the first time, their Clerk user ID isn't in your database. The guard fetches the user from Clerk via `clerkClient.users.getUser(userId)`, extracts `fullName` (or `username`) and `primaryEmailAddress`, and creates a local `User` record with the default `STUDENT` role. Subsequent requests hit the database directly. The guard never accepts a client-supplied role, so users cannot escalate themselves to `TEACHER` or `ADMIN`.
 
 An error is thrown if the Clerk user record is missing an email address.
 
@@ -54,7 +54,7 @@ Use `@Public()` to mark routes that should bypass authentication entirely:
 @Get()
 @Public()
 findAll() {
-  return this.usersService.findAll();
+  return this.itemsService.findAll();
 }
 ```
 
@@ -72,7 +72,7 @@ Define required roles on a method:
 @Delete(':id')
 @Roles(UserRole.ADMIN)
 remove(@Param('id') id: string) {
-  return this.usersService.remove(id);
+  return this.itemsService.remove(id);
 }
 ```
 
@@ -80,7 +80,8 @@ The `UserRole` enum is defined in `prisma/schema.prisma`:
 
 ```prisma
 enum UserRole {
-  USER
+  STUDENT
+  TEACHER
   ADMIN
 }
 ```
@@ -139,7 +140,12 @@ export class ItemsController {
 
 ### Registration
 
-Since `ClerkAuthGuard` is provided globally in `AppModule`, you only need to add Guards and Decorators to your controllers. There is no need to register them per-module.
+`ClerkAuthGuard` is registered as a plain provider in `AppModule` (not a global
+`APP_GUARD`), so each protected controller must declare its guards explicitly
+with `@UseGuards(ClerkAuthGuard, RolesGuard)`. `ThrottlerGuard` and
+`GlobalExceptionFilter` are the only globally registered request pipeline
+pieces. There is no need to register guards per-module beyond the controller
+decorator.
 
 ---
 

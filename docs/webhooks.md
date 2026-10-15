@@ -28,10 +28,12 @@ The endpoint uses `@SkipThrottle()` so it bypasses rate limiting.
 
 ### Responses
 
-| Status            | Body                   | When                                                      |
-| ----------------- | ---------------------- | --------------------------------------------------------- |
-| `204 No Content`  | —                      | Webhook processed successfully                            |
-| `400 Bad Request` | `{ "message": "..." }` | Missing user ID, unknown event type, or invalid signature |
+All responses have an empty body; only the status code is significant:
+
+| Status            | When                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| `204 No Content`  | Webhook processed successfully, skipped (already in sync), or event type is not handled |
+| `400 Bad Request` | Missing user ID, signature verification failure, or handler error                       |
 
 ---
 
@@ -81,10 +83,9 @@ Only deletes if the user exists locally. The routing method silently skips delet
 
 ### Error handling
 
-- Missing `data.id` in any event → returns `400` with `"Missing user ID"`
-- Unknown event type → returns `400` with `"Unknown event type"`
-- Signature verification failure → returns `400` with `"Invalid signature"`
-- All other exceptions propagate as `500` (handled by NestJS exception filter)
+- Missing `data.id` in any event → `400` (empty body)
+- Unknown event type → `204` (empty body; logged as a warning and ignored)
+- Signature verification failure or any other handler exception → `400` (empty body, details in server logs)
 
 ---
 

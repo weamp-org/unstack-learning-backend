@@ -114,10 +114,10 @@ describe('RolesGuard', () => {
   it('returns true when user role is allowed', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === IS_PUBLIC_KEY) return false;
-      return [UserRole.ADMIN, UserRole.USER];
+      return [UserRole.ADMIN, UserRole.STUDENT];
     });
     mockGetAuth.mockReturnValue({ userId: 'clerk_123' });
-    userFindUnique.mockResolvedValue({ role: UserRole.USER });
+    userFindUnique.mockResolvedValue({ role: UserRole.STUDENT });
 
     const result = await guard.canActivate(mockExecutionContext({}));
 
@@ -130,7 +130,7 @@ describe('RolesGuard', () => {
       return [UserRole.ADMIN];
     });
     mockGetAuth.mockReturnValue({ userId: 'clerk_123' });
-    userFindUnique.mockResolvedValue({ role: UserRole.USER });
+    userFindUnique.mockResolvedValue({ role: UserRole.STUDENT });
 
     const result = await guard.canActivate(mockExecutionContext({}));
 

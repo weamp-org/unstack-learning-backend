@@ -199,7 +199,7 @@ it('GET /api/v1', () => {
   return request(app.getHttpServer())
     .get('/api/v1')
     .expect(200)
-    .expect('Hello World!');
+    .expect({ status: 'ok', service: 'unstack-learning-backend' });
 });
 ```
 
