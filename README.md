@@ -117,6 +117,12 @@ unstack-learning-backend/
 │   ├── prisma/
 │   │   ├── prisma.module.ts        # Global Prisma module
 │   │   └── prisma.service.ts       # PrismaClient with adapter-pg
+│   ├── users/
+│   │   ├── users.module.ts
+│   │   ├── users.controller.ts     # PATCH /api/v1/users/:id/role (admin only)
+│   │   ├── users.service.ts
+│   │   └── dtos/
+│   │       └── update-user-role.dto.ts
 │   └── webhooks/
 │       ├── webhooks.module.ts
 │       ├── webhooks.controller.ts  # POST /api/v1/webhooks/clerk
@@ -169,16 +175,18 @@ The template uses two env files loaded in order: `.env.local` (local overrides, 
 
 All endpoints are prefixed with `/api/v1`.
 
-| Method | Path              | Auth                                       | Description                 |
-| ------ | ----------------- | ------------------------------------------ | --------------------------- |
-| `GET`  | `/`               | Public                                     | Health check (`{ status }`) |
-| `POST` | `/webhooks/clerk` | Public (signature-verified, skip throttle) | Clerk webhook events        |
+| Method  | Path              | Auth                                       | Description                                          |
+| ------- | ----------------- | ------------------------------------------ | ---------------------------------------------------- |
+| `GET`   | `/`               | Public                                     | Health check (`{ status }`)                          |
+| `PATCH` | `/users/:id/role` | Admin only                                 | Assign a user role (`STUDENT` / `TEACHER` / `ADMIN`) |
+| `POST`  | `/webhooks/clerk` | Public (signature-verified, skip throttle) | Clerk webhook events                                 |
 
-There are no user-management endpoints: local `User` records are created and
-synced automatically by `ClerkAuthGuard` (on first authenticated request,
-default role `STUDENT`) and the Clerk webhook handler. Roles are assigned
-out-of-band (database or Clerk dashboard) — no API accepts a `role` field, so
-users cannot escalate themselves to `TEACHER` or `ADMIN`.
+Local `User` records are created and synced automatically by `ClerkAuthGuard`
+(on first authenticated request, default role `STUDENT`) and the Clerk webhook
+handler. Roles are assigned via `PATCH /users/:id/role` (admin only — admins
+cannot change their own role, so access can never be locked out) or directly
+in the database. No other API accepts a `role` field, so users cannot
+escalate themselves to `TEACHER` or `ADMIN`.
 
 ## Auth model
 

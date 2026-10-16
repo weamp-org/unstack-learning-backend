@@ -12,6 +12,7 @@ import { LoggingMiddleware } from './logging/logging.middleware.js';
 import { pinoConfig } from './logging/pino.config.js';
 import { ALL_ROUTES } from './logging/routes.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { UsersModule } from './users/users.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 
 @Module({
@@ -43,6 +44,7 @@ import { WebhooksModule } from './webhooks/webhooks.module.js';
       },
     ]),
     PrismaModule,
+    UsersModule,
     WebhooksModule,
   ],
   controllers: [AppController],
