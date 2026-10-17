@@ -59,7 +59,7 @@ describe('HelpRequestsService', () => {
       await expect(
         service.create('learner-1', {
           ...dto,
-          links: [{ url: 'https://example.com/video', label: 'Lost at 6:12' }],
+          links: [{ url: 'https://example.com/video' }],
         }),
       ).resolves.toEqual(created);
       expect(prisma.helpRequest.create).toHaveBeenCalledWith({
@@ -69,9 +69,7 @@ describe('HelpRequestsService', () => {
           topic: dto.topic,
           details: dto.details,
           links: {
-            create: [
-              { url: 'https://example.com/video', label: 'Lost at 6:12' },
-            ],
+            create: [{ url: 'https://example.com/video' }],
           },
         },
         include: { subject: true, links: true },

@@ -91,7 +91,6 @@ model HelpLink {
   requestId String
   request   HelpRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   url       String
-  label     String?
 
   @@index([requestId])
 }

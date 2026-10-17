@@ -19,15 +19,6 @@ export class HelpLinkInput {
   @IsUrl({ require_protocol: true })
   @MaxLength(2048)
   url: string;
-
-  /** What the teacher should look at, e.g. a timestamp.
-   * @example 'Lost at 6:12'
-   */
-  @ApiProperty({ required: false, example: 'Lost at 6:12' })
-  @IsString()
-  @IsOptional()
-  @MaxLength(120)
-  label?: string;
 }
 
 export class CreateHelpRequestDto {
@@ -39,10 +30,10 @@ export class CreateHelpRequestDto {
   @IsNotEmpty()
   subjectId: string;
 
-  /** Short title naming the struggle.
-   * @example 'Integration by parts keeps failing'
+  /** Curriculum topic within the subject.
+   * @example 'Differentiation'
    */
-  @ApiProperty({ example: 'Integration by parts keeps failing' })
+  @ApiProperty({ example: 'Differentiation' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
