@@ -20,4 +20,7 @@ model User {
   email String @unique
 
   role UserRole @default(STUDENT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
