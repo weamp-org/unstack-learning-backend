@@ -61,8 +61,8 @@ export class SubjectsService {
   }
 
   async remove(id: string) {
-    // No dependents yet; once help requests reference subjects, deletion of
-    // referenced rows must be refused (deactivate via PATCH instead).
+    // Deletion is refused (P2003 → 400) once teachers or help requests
+    // reference the subject — deactivate via PATCH instead.
     await this.findOne(id);
     return this.prisma.subject.delete({ where: { id } });
   }

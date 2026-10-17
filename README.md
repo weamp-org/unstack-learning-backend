@@ -130,6 +130,12 @@ unstack-learning-backend/
 │   │   └── dtos/
 │   │       ├── create-subject.dto.ts
 │   │       └── update-subject.dto.ts
+│   ├── teachers/
+│   │   ├── teachers.module.ts
+│   │   ├── teachers.controller.ts  # GET/PUT /api/v1/teachers/me/subjects (teacher+admin)
+│   │   ├── teachers.service.ts     # Transactional subject-set replacement
+│   │   └── dtos/
+│   │       └── set-teacher-subjects.dto.ts
 │   └── webhooks/
 │       ├── webhooks.module.ts
 │       ├── webhooks.controller.ts  # POST /api/v1/webhooks/clerk
@@ -137,7 +143,9 @@ unstack-learning-backend/
 ├── test/
 │   ├── jest-e2e.json               # E2E Jest config
 │   ├── app.e2e-spec.ts
-│   └── subjects.e2e-spec.ts
+│   ├── subjects.e2e-spec.ts
+│   ├── teachers.e2e-spec.ts
+│   └── users.e2e-spec.ts
 ├── .husky/                         # Git hooks (created on pnpm install)
 └── secrets/                        # Docker secrets (gitignored, see secrets/*.txt.example)
 ```

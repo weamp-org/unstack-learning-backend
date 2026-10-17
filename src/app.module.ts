@@ -15,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { UsersModule } from './users/users.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 import { SubjectsModule } from './subjects/subjects.module.js';
+import { TeachersModule } from './teachers/teachers.module.js';
 
 @Module({
   imports: [
@@ -45,9 +46,10 @@ import { SubjectsModule } from './subjects/subjects.module.js';
       },
     ]),
     PrismaModule,
+    SubjectsModule,
+    TeachersModule,
     UsersModule,
     WebhooksModule,
-    SubjectsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -21,6 +21,8 @@ model User {
 
   role UserRole @default(STUDENT)
 
+  teachingSubjects TeacherSubject[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -32,6 +34,19 @@ model Subject {
   description String?
   isActive    Boolean @default(true)
 
+  teachers TeacherSubject[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Links teachers to the subjects they can help with. Pure link table: no
+/// timestamps, no metadata — extend explicitly if that need arrives.
+model TeacherSubject {
+  teacherId String
+  subjectId String
+  teacher   User    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@id([teacherId, subjectId])
 }
