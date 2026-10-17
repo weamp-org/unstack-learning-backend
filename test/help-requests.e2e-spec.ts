@@ -52,6 +52,10 @@ describe('HelpRequests (e2e)', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    helpSession: {
+      create: jest.fn(),
+      update: jest.fn(),
+    },
     helpRequestDecision: {
       upsert: jest.fn(),
     },
@@ -268,6 +272,59 @@ describe('HelpRequests (e2e)', () => {
         .patch('/api/v1/requests/r-1/accept')
         .send({})
         .expect(403);
+    });
+  });
+
+  describe('updating the session', () => {
+    let app: INestApplication<App>;
+
+    const acceptedRow = {
+      ...row,
+      status: 'ACCEPTED',
+      teacherId: 'teacher-1',
+      session: { id: 'sess-1', requestId: 'r-1' },
+    };
+
+    beforeEach(async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ role: 'TEACHER' });
+      app = await bootApp({ authUserId: 'teacher-1' });
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('PATCH /api/v1/requests/:id/session updates link and time', async () => {
+      prismaMock.helpRequest.findUnique.mockResolvedValue(acceptedRow);
+      prismaMock.helpSession.update.mockResolvedValue({});
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1/session')
+        .send({ sessionUrl: 'https://meet.google.com/abc' })
+        .expect(200);
+      expect(prismaMock.helpSession.update).toHaveBeenCalledWith({
+        where: { requestId: 'r-1' },
+        data: {
+          sessionUrl: 'https://meet.google.com/abc',
+          scheduledAt: undefined,
+        },
+      });
+    });
+
+    it('PATCH session 404s for uninvolved teachers', async () => {
+      prismaMock.helpRequest.findUnique.mockResolvedValue(acceptedRow);
+      prismaMock.user.findUnique.mockResolvedValue({ role: 'TEACHER' });
+      prismaMock.teacherSubject.findFirst.mockResolvedValue(null);
+
+      const otherApp = await bootApp({ authUserId: 'teacher-2' });
+      try {
+        await request(otherApp.getHttpServer())
+          .patch('/api/v1/requests/r-1/session')
+          .send({})
+          .expect(404);
+      } finally {
+        await otherApp.close();
+      }
     });
   });
 

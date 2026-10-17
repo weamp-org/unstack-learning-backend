@@ -14,6 +14,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AcceptHelpRequestDto } from './dtos/accept-help-request.dto.js';
 import { CreateHelpRequestDto } from './dtos/create-help-request.dto.js';
+import { UpdateHelpSessionDto } from './dtos/update-help-session.dto.js';
 
 const REQUEST_INCLUDE = {
   subject: true,
@@ -240,6 +241,39 @@ export class HelpRequestsService {
     return this.prisma.helpRequest.update({
       where: { id },
       data: { status: HelpRequestStatus.CLOSED },
+      include: DETAIL_INCLUDE,
+    });
+  }
+
+  async updateSession(
+    clerkId: string,
+    isAdmin: boolean,
+    id: string,
+    dto: UpdateHelpSessionDto,
+  ) {
+    const request = await this.findOneFor(clerkId, id);
+    // Only the accepting teacher (or an admin) may touch the session.
+    if (!isAdmin && request.teacherId !== clerkId) {
+      throw new NotFoundException(`Request ${id} not found`);
+    }
+    if (!request.session) {
+      throw new NotFoundException(`Request ${id} has no session yet`);
+    }
+
+    let scheduledAt: Date | undefined;
+    if (dto.scheduledAt !== undefined) {
+      scheduledAt = new Date(dto.scheduledAt);
+      if (Number.isNaN(scheduledAt.getTime())) {
+        throw new BadRequestException('scheduledAt must be a valid datetime');
+      }
+    }
+
+    await this.prisma.helpSession.update({
+      where: { requestId: id },
+      data: { sessionUrl: dto.sessionUrl, scheduledAt },
+    });
+    return this.prisma.helpRequest.findUnique({
+      where: { id },
       include: DETAIL_INCLUDE,
     });
   }

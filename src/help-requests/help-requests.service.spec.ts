@@ -24,6 +24,7 @@ const mockPrismaService = {
   },
   helpSession: {
     create: jest.fn(),
+    update: jest.fn(),
   },
   $transaction: jest.fn((callback: (tx: TxMock) => unknown) =>
     callback(mockTx),
@@ -479,6 +480,82 @@ describe('HelpRequestsService', () => {
         service.closeRequest('learner-1', false, 'r-1'),
       ).resolves.toBeDefined();
       expect(prisma.helpRequest.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateSession', () => {
+    const row = {
+      id: 'r-1',
+      learnerId: 'learner-1',
+      teacherId: 'teacher-1',
+      status: 'ACCEPTED',
+      session: { id: 's-1', requestId: 'r-1' },
+    };
+
+    it('updates link and time for the assigned teacher', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(row);
+      const updated = { ...row, status: 'ACCEPTED' };
+      prisma.helpRequest.findUnique.mockResolvedValueOnce(row);
+      prisma.helpRequest.findUnique.mockResolvedValue(updated);
+      prisma.helpSession.update.mockResolvedValue({});
+
+      await expect(
+        service.updateSession('teacher-1', false, 'r-1', {
+          sessionUrl: 'https://meet.google.com/xyz',
+          scheduledAt: '2026-10-25T14:00:00.000Z',
+        }),
+      ).resolves.toEqual(updated);
+      expect(prisma.helpSession.update).toHaveBeenCalledWith({
+        where: { requestId: 'r-1' },
+        data: {
+          sessionUrl: 'https://meet.google.com/xyz',
+          scheduledAt: new Date('2026-10-25T14:00:00.000Z'),
+        },
+      });
+    });
+
+    it('updates link and time for admins', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(row);
+      prisma.user.findUnique.mockResolvedValue({ role: 'ADMIN' });
+      prisma.helpSession.update.mockResolvedValue({});
+
+      await expect(
+        service.updateSession('admin-1', true, 'r-1', {}),
+      ).resolves.toBeDefined();
+    });
+
+    it('404s for teachers who did not accept', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(row);
+      prisma.user.findUnique.mockResolvedValue({ role: 'TEACHER' });
+      prisma.teacherSubject.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateSession('teacher-2', false, 'r-1', {}),
+      ).rejects.toThrow('Request r-1 not found');
+      expect(prisma.helpSession.update).not.toHaveBeenCalled();
+    });
+
+    it('404s when no session exists yet', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue({
+        ...row,
+        teacherId: null,
+        session: null,
+      });
+      prisma.user.findUnique.mockResolvedValue({ role: 'ADMIN' });
+
+      await expect(
+        service.updateSession('admin-1', true, 'r-1', {}),
+      ).rejects.toThrow('Request r-1 has no session yet');
+    });
+
+    it('400s for unparseable session times', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(row);
+
+      await expect(
+        service.updateSession('teacher-1', false, 'r-1', {
+          scheduledAt: 'soon',
+        }),
+      ).rejects.toThrow('scheduledAt must be a valid datetime');
     });
   });
 });

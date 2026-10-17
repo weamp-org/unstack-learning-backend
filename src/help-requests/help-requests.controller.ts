@@ -16,6 +16,7 @@ import { RolesGuard } from '../roles/roles.guard.js';
 import { UserClerkId } from '../user-clerk-id/user-clerk-id.decorator.js';
 import { AcceptHelpRequestDto } from './dtos/accept-help-request.dto.js';
 import { CreateHelpRequestDto } from './dtos/create-help-request.dto.js';
+import { UpdateHelpSessionDto } from './dtos/update-help-session.dto.js';
 import { HelpRequestsService } from './help-requests.service.js';
 
 @UseGuards(ClerkAuthGuard, RolesGuard)
@@ -81,5 +82,16 @@ export class HelpRequestsController {
     if (clerkId === null) throw new UnauthorizedException();
     const isAdmin = await this.helpRequestsService.isAdmin(clerkId);
     return this.helpRequestsService.closeRequest(clerkId, isAdmin, id);
+  }
+
+  @Patch(':id/session')
+  async updateSession(
+    @UserClerkId() clerkId: string | null,
+    @Param('id') id: string,
+    @Body() dto: UpdateHelpSessionDto,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    const isAdmin = await this.helpRequestsService.isAdmin(clerkId);
+    return this.helpRequestsService.updateSession(clerkId, isAdmin, id, dto);
   }
 }

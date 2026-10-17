@@ -15,6 +15,7 @@ const mockHelpRequestsService = {
   acceptRequest: jest.fn(),
   declineRequest: jest.fn(),
   closeRequest: jest.fn(),
+  updateSession: jest.fn(),
 };
 
 describe('HelpRequestsController', () => {
@@ -162,5 +163,30 @@ describe('HelpRequestsController', () => {
       UnauthorizedException,
     );
     expect(service.closeRequest).not.toHaveBeenCalled();
+  });
+
+  it('updateSession resolves admin and delegates', async () => {
+    const dto = { sessionUrl: 'https://meet.google.com/abc' };
+    const updated = { id: 'r-1' };
+    service.isAdmin.mockResolvedValue(false);
+    service.updateSession.mockResolvedValue(updated);
+
+    await expect(controller.updateSession('t-1', 'r-1', dto)).resolves.toEqual(
+      updated,
+    );
+    expect(service.isAdmin).toHaveBeenCalledWith('t-1');
+    expect(service.updateSession).toHaveBeenCalledWith(
+      't-1',
+      false,
+      'r-1',
+      dto,
+    );
+  });
+
+  it('updateSession throws without a caller id', async () => {
+    await expect(controller.updateSession(null, 'r-1', {})).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(service.updateSession).not.toHaveBeenCalled();
   });
 });
