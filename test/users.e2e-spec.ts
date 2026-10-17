@@ -8,8 +8,6 @@ import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma/prisma.service';
 
 describe('Users (e2e)', () => {
-  let app: INestApplication<App>;
-
   const me = {
     id: 'user-1',
     name: 'Test User',
@@ -17,43 +15,89 @@ describe('Users (e2e)', () => {
     role: 'STUDENT',
   };
 
-  beforeEach(async () => {
-    const moduleFixture = await Test.createTestingModule({
-      imports: [AppModule],
-    })
-      .overrideProvider(PrismaService)
-      .useValue({
-        user: { findUnique: jest.fn().mockResolvedValue(me) },
-      })
-      .compile();
+  const admin = {
+    id: 'admin-1',
+    name: 'Admin User',
+    email: 'admin@example.com',
+    role: 'ADMIN',
+  };
 
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api/v1');
-    // Stand-in for main.ts's clerkMiddleware(): it attaches a branded
-    // req.auth function, which is all the guards read (verified against
-    // @clerk/express's requestHasAuthObject check; tokenType must read
-    // 'session_token' or getAuth() returns a signed-out object). Lets the
-    // real ClerkAuthGuard and RolesGuard run without Clerk keys or network.
-    app.use((req: Request, _res: Response, next: NextFunction) => {
+  const prismaMock = {
+    user: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
+  };
+
+  async function bootApp(authUserId?: string): Promise<INestApplication<App>> {
+    const moduleBuilder = Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(PrismaService)
+      .useValue(prismaMock);
+    const moduleFixture = await moduleBuilder.compile();
+    const testApp = moduleFixture.createNestApplication();
+    testApp.setGlobalPrefix('api/v1');
+    if (authUserId) {
+      // Branded stub-auth middleware: lets the real ClerkAuthGuard and
+      // RolesGuard run without Clerk keys or network (verified against
+      // @clerk/express's requestHasAuthObject check; tokenType must read
+      // 'session_token' or getAuth() returns a signed-out object).
       const stubAuth = () => ({
-        userId: 'user-1',
+        userId: authUserId,
         tokenType: 'session_token',
       });
       Object.assign(stubAuth, { [Symbol.for('@clerk/express.auth')]: true });
-      (req as unknown as Record<string, unknown>).auth = stubAuth;
-      next();
+      testApp.use((req: Request, _res: Response, next: NextFunction) => {
+        (req as unknown as Record<string, unknown>).auth = stubAuth;
+        next();
+      });
+    }
+    await testApp.init();
+    return testApp;
+  }
+
+  describe('GET /api/v1/users/me', () => {
+    let app: INestApplication<App>;
+
+    beforeEach(async () => {
+      prismaMock.user.findUnique.mockResolvedValue(me);
+      app = await bootApp('user-1');
     });
-    await app.init();
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('returns the caller record', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/users/me')
+        .expect(200)
+        .expect(me);
+    });
   });
 
-  it('GET /api/v1/users/me returns the caller record', () => {
-    return request(app.getHttpServer())
-      .get('/api/v1/users/me')
-      .expect(200)
-      .expect(me);
-  });
+  describe('GET /api/v1/users', () => {
+    let app: INestApplication<App>;
 
-  afterEach(async () => {
-    await app.close();
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('returns the user list for admins', async () => {
+      prismaMock.user.findUnique.mockResolvedValue(admin);
+      prismaMock.user.findMany.mockResolvedValue([me, admin]);
+      app = await bootApp('admin-1');
+
+      await request(app.getHttpServer())
+        .get('/api/v1/users')
+        .expect(200)
+        .expect([me, admin]);
+    });
+
+    it('forbids non-admins through the real guard chain', async () => {
+      prismaMock.user.findUnique.mockResolvedValue(me);
+      app = await bootApp('user-1');
+
+      await request(app.getHttpServer()).get('/api/v1/users').expect(403);
+    });
   });
 });

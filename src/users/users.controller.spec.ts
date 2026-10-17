@@ -13,6 +13,7 @@ describe('UsersController', () => {
   let service: {
     updateRole: jest.Mock;
     findMe: jest.Mock;
+    findAll: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -24,6 +25,7 @@ describe('UsersController', () => {
           useValue: {
             updateRole: jest.fn(),
             findMe: jest.fn(),
+            findAll: jest.fn(),
           },
         },
       ],
@@ -56,6 +58,21 @@ describe('UsersController', () => {
     it('throws UnauthorizedException without a caller id', () => {
       expect(() => controller.findMe(null)).toThrow(UnauthorizedException);
       expect(service.findMe).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findAll', () => {
+    it('delegates to service.findAll with the query', async () => {
+      const users = [{ id: 'clerk_123' }];
+      service.findAll.mockResolvedValue(users);
+
+      await expect(
+        controller.findAll({ q: 'ama', role: UserRole.TEACHER }),
+      ).resolves.toBe(users);
+      expect(service.findAll).toHaveBeenCalledWith({
+        q: 'ama',
+        role: UserRole.TEACHER,
+      });
     });
   });
 

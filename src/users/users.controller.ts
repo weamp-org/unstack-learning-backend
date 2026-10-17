@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Patch,
+  Query,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { UserRole } from '../generated/prisma/enums.js';
 import { Roles } from '../roles/roles.decorator.js';
 import { RolesGuard } from '../roles/roles.guard.js';
 import { UserClerkId } from '../user-clerk-id/user-clerk-id.decorator.js';
+import { ListUsersDto } from './dtos/list-users.dto.js';
 import { UpdateUserRoleDto } from './dtos/update-user-role.dto.js';
 import { UsersService } from './users.service.js';
 
@@ -30,6 +32,12 @@ export class UsersController {
     // record; the null check is defensive against guard ordering changes.
     if (clerkId === null) throw new UnauthorizedException();
     return this.usersService.findMe(clerkId);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Get()
+  findAll(@Query() query: ListUsersDto) {
+    return this.usersService.findAll(query);
   }
 
   @Roles(UserRole.ADMIN)

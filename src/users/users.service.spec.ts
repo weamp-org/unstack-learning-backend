@@ -10,6 +10,7 @@ describe('UsersService', () => {
     user: {
       update: jest.Mock;
       findUnique: jest.Mock;
+      findMany: jest.Mock;
     };
   };
 
@@ -23,6 +24,7 @@ describe('UsersService', () => {
             user: {
               update: jest.fn(),
               findUnique: jest.fn(),
+              findMany: jest.fn(),
             },
           },
         },
@@ -59,6 +61,64 @@ describe('UsersService', () => {
       await expect(service.findMe('missing')).rejects.toThrow(
         'User missing not found',
       );
+    });
+  });
+
+  describe('findAll', () => {
+    it('lists newest users first, capped at 50, without filters', async () => {
+      const users = [{ id: 'clerk_123' }];
+      prisma.user.findMany.mockResolvedValue(users);
+
+      await expect(service.findAll({})).resolves.toEqual(users);
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: {},
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+    });
+
+    it('filters by search text across name and email', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.findAll({ q: 'ama' });
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            { name: { contains: 'ama', mode: 'insensitive' } },
+            { email: { contains: 'ama', mode: 'insensitive' } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+    });
+
+    it('filters by role', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.findAll({ role: UserRole.TEACHER });
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: { role: UserRole.TEACHER },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+    });
+
+    it('combines search text and role', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.findAll({ q: 'ama', role: UserRole.STUDENT });
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          role: UserRole.STUDENT,
+          OR: [
+            { name: { contains: 'ama', mode: 'insensitive' } },
+            { email: { contains: 'ama', mode: 'insensitive' } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
     });
   });
 
