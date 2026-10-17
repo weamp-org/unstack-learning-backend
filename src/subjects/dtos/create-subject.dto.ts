@@ -8,6 +8,10 @@ import {
 } from 'class-validator';
 
 export class CreateSubjectDto {
+  /** Display name of the subject. Must be unique; the URL slug is derived
+   * from it server-side.
+   * @example 'Mathematics'
+   */
   @ApiProperty({ example: 'Mathematics' })
   @IsString()
   @IsNotEmpty()
@@ -15,6 +19,10 @@ export class CreateSubjectDto {
   @MaxLength(100)
   name: string;
 
+  /** Optional description shown wherever subjects are listed, e.g. to
+   * clarify what the subject covers.
+   * @example 'Help with algebra, geometry, and calculus'
+   */
   @ApiProperty({
     example: 'Help with algebra, geometry, and calculus',
     required: false,
