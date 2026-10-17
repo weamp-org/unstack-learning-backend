@@ -1,0 +1,68 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
+import { PrismaService } from '../prisma/prisma.service.js';
+import { CreateSubjectDto } from './dtos/create-subject.dto.js';
+import { UpdateSubjectDto } from './dtos/update-subject.dto.js';
+
+@Injectable()
+export class SubjectsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(dto: CreateSubjectDto) {
+    // The slug is derived server-side so clients can never squat, collide,
+    // or smuggle one in (the global ValidationPipe rejects unknown fields).
+    // A slug clash with an existing subject raises P2002, translated to 409
+    // by GlobalExceptionFilter.
+    return this.prisma.subject.create({
+      data: { ...dto, slug: slugify(dto.name) },
+    });
+  }
+
+  findAll() {
+    // Active subjects only: this list feeds the help-request form and may
+    // be shown publicly, so deactivated subjects stay hidden. Admins
+    // reactivate via PATCH /subjects/:id.
+    return this.prisma.subject.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async findOne(id: string) {
+    const subject = await this.prisma.subject.findUnique({ where: { id } });
+    if (!subject) throw new NotFoundException(`Subject ${id} not found`);
+    return subject;
+  }
+
+  update(id: string, dto: UpdateSubjectDto) {
+    // The slug is frozen after creation so renames never break links.
+    // A missing subject raises P2025, translated to 404 by
+    // GlobalExceptionFilter.
+    return this.prisma.subject.update({ where: { id }, data: dto });
+  }
+
+  async remove(id: string) {
+    // No dependents yet; once help requests reference subjects, deletion of
+    // referenced rows must be refused (deactivate via PATCH instead).
+    await this.findOne(id);
+    return this.prisma.subject.delete({ where: { id } });
+  }
+}
+
+function slugify(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!slug) {
+    throw new BadRequestException(
+      'Subject name must contain at least one letter or number',
+    );
+  }
+  return slug;
+}

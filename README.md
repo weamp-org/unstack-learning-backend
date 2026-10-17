@@ -123,13 +123,21 @@ unstack-learning-backend/
 │   │   ├── users.service.ts
 │   │   └── dtos/
 │   │       └── update-user-role.dto.ts
+│   ├── subjects/
+│   │   ├── subjects.module.ts
+│   │   ├── subjects.controller.ts  # CRUD /api/v1/subjects (public reads, admin writes)
+│   │   ├── subjects.service.ts     # Prisma access + server-generated slugs
+│   │   └── dtos/
+│   │       ├── create-subject.dto.ts
+│   │       └── update-subject.dto.ts
 │   └── webhooks/
 │       ├── webhooks.module.ts
 │       ├── webhooks.controller.ts  # POST /api/v1/webhooks/clerk
 │       └── webhooks.service.ts     # Clerk webhook event handlers
 ├── test/
 │   ├── jest-e2e.json               # E2E Jest config
-│   └── app.e2e-spec.ts
+│   ├── app.e2e-spec.ts
+│   └── subjects.e2e-spec.ts
 ├── .husky/                         # Git hooks (created on pnpm install)
 └── secrets/                        # Docker secrets (gitignored, see secrets/*.txt.example)
 ```
