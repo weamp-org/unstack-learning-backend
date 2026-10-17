@@ -11,6 +11,10 @@ const mockHelpRequestsService = {
   findMine: jest.fn(),
   findOneFor: jest.fn(),
   findQueue: jest.fn(),
+  isAdmin: jest.fn(),
+  acceptRequest: jest.fn(),
+  declineRequest: jest.fn(),
+  closeRequest: jest.fn(),
 };
 
 describe('HelpRequestsController', () => {
@@ -95,5 +99,68 @@ describe('HelpRequestsController', () => {
       UnauthorizedException,
     );
     expect(service.findOneFor).not.toHaveBeenCalled();
+  });
+
+  it('accept resolves admin and delegates', async () => {
+    const dto = { sessionUrl: 'https://meet.google.com/abc' };
+    const accepted = { id: 'r-1', status: 'ACCEPTED' };
+    service.isAdmin.mockResolvedValue(false);
+    service.acceptRequest.mockResolvedValue(accepted);
+
+    await expect(controller.accept('t-1', 'r-1', dto)).resolves.toEqual(
+      accepted,
+    );
+    expect(service.isAdmin).toHaveBeenCalledWith('t-1');
+    expect(service.acceptRequest).toHaveBeenCalledWith(
+      't-1',
+      false,
+      'r-1',
+      dto,
+    );
+  });
+
+  it('accept throws without a caller id', async () => {
+    await expect(controller.accept(null, 'r-1', {})).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(service.acceptRequest).not.toHaveBeenCalled();
+  });
+
+  it('decline resolves admin and delegates', async () => {
+    service.isAdmin.mockResolvedValue(true);
+    service.declineRequest.mockResolvedValue({ id: 'r-1', declined: true });
+
+    await expect(controller.decline('admin-1', 'r-1')).resolves.toEqual({
+      id: 'r-1',
+      declined: true,
+    });
+    expect(service.declineRequest).toHaveBeenCalledWith('admin-1', true, 'r-1');
+  });
+
+  it('decline throws without a caller id', async () => {
+    await expect(controller.decline(null, 'r-1')).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(service.declineRequest).not.toHaveBeenCalled();
+  });
+
+  it('close resolves admin and delegates', async () => {
+    const closed = { id: 'r-1', status: 'CLOSED' };
+    service.isAdmin.mockResolvedValue(false);
+    service.closeRequest.mockResolvedValue(closed);
+
+    await expect(controller.close('learner-1', 'r-1')).resolves.toEqual(closed);
+    expect(service.closeRequest).toHaveBeenCalledWith(
+      'learner-1',
+      false,
+      'r-1',
+    );
+  });
+
+  it('close throws without a caller id', async () => {
+    await expect(controller.close(null, 'r-1')).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(service.closeRequest).not.toHaveBeenCalled();
   });
 });

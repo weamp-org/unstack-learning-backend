@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   UnauthorizedException,
   UseGuards,
@@ -13,6 +14,7 @@ import { UserRole } from '../generated/prisma/enums.js';
 import { Roles } from '../roles/roles.decorator.js';
 import { RolesGuard } from '../roles/roles.guard.js';
 import { UserClerkId } from '../user-clerk-id/user-clerk-id.decorator.js';
+import { AcceptHelpRequestDto } from './dtos/accept-help-request.dto.js';
 import { CreateHelpRequestDto } from './dtos/create-help-request.dto.js';
 import { HelpRequestsService } from './help-requests.service.js';
 
@@ -49,5 +51,35 @@ export class HelpRequestsController {
   findOne(@UserClerkId() clerkId: string | null, @Param('id') id: string) {
     if (clerkId === null) throw new UnauthorizedException();
     return this.helpRequestsService.findOneFor(clerkId, id);
+  }
+
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @Patch(':id/accept')
+  async accept(
+    @UserClerkId() clerkId: string | null,
+    @Param('id') id: string,
+    @Body() dto: AcceptHelpRequestDto,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    const isAdmin = await this.helpRequestsService.isAdmin(clerkId);
+    return this.helpRequestsService.acceptRequest(clerkId, isAdmin, id, dto);
+  }
+
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @Patch(':id/decline')
+  async decline(
+    @UserClerkId() clerkId: string | null,
+    @Param('id') id: string,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    const isAdmin = await this.helpRequestsService.isAdmin(clerkId);
+    return this.helpRequestsService.declineRequest(clerkId, isAdmin, id);
+  }
+
+  @Patch(':id/close')
+  async close(@UserClerkId() clerkId: string | null, @Param('id') id: string) {
+    if (clerkId === null) throw new UnauthorizedException();
+    const isAdmin = await this.helpRequestsService.isAdmin(clerkId);
+    return this.helpRequestsService.closeRequest(clerkId, isAdmin, id);
   }
 }

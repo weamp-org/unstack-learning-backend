@@ -17,6 +17,48 @@ const mockPrismaService = {
     create: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    update: jest.fn(),
+  },
+  helpRequestDecision: {
+    upsert: jest.fn(),
+  },
+  helpSession: {
+    create: jest.fn(),
+  },
+  $transaction: jest.fn((callback: (tx: TxMock) => unknown) =>
+    callback(mockTx),
+  ),
+};
+
+interface TxMock {
+  helpRequest: {
+    findUnique: jest.Mock;
+    update: jest.Mock;
+  };
+  teacherSubject: {
+    findFirst: jest.Mock;
+  };
+  helpRequestDecision: {
+    upsert: jest.Mock;
+  };
+  helpSession: {
+    create: jest.Mock;
+  };
+}
+
+const mockTx: TxMock = {
+  helpRequest: {
+    findUnique: jest.fn(),
+    update: jest.fn(),
+  },
+  teacherSubject: {
+    findFirst: jest.fn(),
+  },
+  helpRequestDecision: {
+    upsert: jest.fn(),
+  },
+  helpSession: {
+    create: jest.fn(),
   },
 };
 
@@ -203,7 +245,7 @@ describe('HelpRequestsService', () => {
 
       await expect(service.findQueue('admin-1')).resolves.toEqual(rows);
       expect(prisma.helpRequest.findMany).toHaveBeenCalledWith({
-        where: {},
+        where: { status: 'OPEN' },
         include: {
           subject: true,
           links: true,
@@ -219,7 +261,11 @@ describe('HelpRequestsService', () => {
 
       await service.findQueue('teacher-1');
       expect(prisma.helpRequest.findMany).toHaveBeenCalledWith({
-        where: { subject: { teachers: { some: { teacherId: 'teacher-1' } } } },
+        where: {
+          status: 'OPEN',
+          subject: { teachers: { some: { teacherId: 'teacher-1' } } },
+          NOT: { decisions: { some: { teacherId: 'teacher-1' } } },
+        },
         include: {
           subject: true,
           links: true,
@@ -227,6 +273,212 @@ describe('HelpRequestsService', () => {
         },
         orderBy: { createdAt: 'asc' },
       });
+    });
+  });
+
+  describe('isAdmin', () => {
+    it('returns true for admins', async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: 'ADMIN' });
+
+      await expect(service.isAdmin('admin-1')).resolves.toBe(true);
+    });
+
+    it('returns false otherwise', async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: 'TEACHER' });
+
+      await expect(service.isAdmin('teacher-1')).resolves.toBe(false);
+    });
+  });
+
+  describe('acceptRequest', () => {
+    const openRow = {
+      id: 'r-1',
+      status: 'OPEN',
+      subjectId: 's-1',
+    };
+
+    it('accepts an open request with session details', async () => {
+      mockTx.helpRequest.findUnique.mockResolvedValue(openRow);
+      mockTx.teacherSubject.findFirst.mockResolvedValue({ teacherId: 't-1' });
+      const accepted = { ...openRow, status: 'ACCEPTED' };
+      mockTx.helpRequest.findUnique.mockResolvedValueOnce(openRow);
+      mockTx.helpRequest.findUnique.mockResolvedValue(accepted);
+
+      const result = await service.acceptRequest('t-1', false, 'r-1', {
+        sessionUrl: 'https://meet.google.com/abc',
+        scheduledAt: '2026-10-25T14:00:00.000Z',
+      });
+
+      expect(result).toEqual(accepted);
+      expect(mockTx.helpRequest.update).toHaveBeenCalledWith({
+        where: { id: 'r-1' },
+        data: { status: 'ACCEPTED', teacherId: 't-1' },
+      });
+      expect(mockTx.helpRequestDecision.upsert).toHaveBeenCalledWith({
+        where: { requestId_teacherId: { requestId: 'r-1', teacherId: 't-1' } },
+        update: { decision: 'ACCEPTED' },
+        create: { requestId: 'r-1', teacherId: 't-1', decision: 'ACCEPTED' },
+      });
+      expect(mockTx.helpSession.create).toHaveBeenCalledWith({
+        data: {
+          requestId: 'r-1',
+          sessionUrl: 'https://meet.google.com/abc',
+          scheduledAt: new Date('2026-10-25T14:00:00.000Z'),
+          source: 'MANUAL',
+        },
+      });
+    });
+
+    it('404s for missing requests', async () => {
+      mockTx.helpRequest.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.acceptRequest('t-1', false, 'nope', {}),
+      ).rejects.toThrow('Request nope not found');
+    });
+
+    it('409s when the request is no longer open', async () => {
+      mockTx.helpRequest.findUnique.mockResolvedValue({
+        ...openRow,
+        status: 'ACCEPTED',
+      });
+
+      await expect(
+        service.acceptRequest('t-1', false, 'r-1', {}),
+      ).rejects.toThrow('Request is no longer open');
+      expect(mockTx.helpRequest.update).not.toHaveBeenCalled();
+    });
+
+    it('403s for teachers without the subject', async () => {
+      mockTx.helpRequest.findUnique.mockResolvedValue(openRow);
+      mockTx.teacherSubject.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.acceptRequest('t-2', false, 'r-1', {}),
+      ).rejects.toThrow('Only teachers of this subject can accept');
+    });
+
+    it('skips the subject check for admins', async () => {
+      mockTx.helpRequest.findUnique.mockResolvedValueOnce(openRow);
+      const accepted = { ...openRow, status: 'ACCEPTED' };
+      mockTx.helpRequest.findUnique.mockResolvedValue(accepted);
+
+      await expect(
+        service.acceptRequest('admin-1', true, 'r-1', {}),
+      ).resolves.toEqual(accepted);
+      expect(mockTx.teacherSubject.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('400s for unparseable session times', async () => {
+      await expect(
+        service.acceptRequest('t-1', false, 'r-1', { scheduledAt: 'soon' }),
+      ).rejects.toThrow('scheduledAt must be a valid datetime');
+    });
+  });
+
+  describe('declineRequest', () => {
+    const openRow = { id: 'r-1', status: 'OPEN', subjectId: 's-1' };
+
+    it('records the decline and leaves the request open', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(openRow);
+      prisma.teacherSubject.findFirst.mockResolvedValue({ teacherId: 't-1' });
+      prisma.helpRequestDecision.upsert.mockResolvedValue({});
+
+      await expect(
+        service.declineRequest('t-1', false, 'r-1'),
+      ).resolves.toEqual({ id: 'r-1', declined: true });
+      expect(prisma.helpRequestDecision.upsert).toHaveBeenCalledWith({
+        where: { requestId_teacherId: { requestId: 'r-1', teacherId: 't-1' } },
+        update: { decision: 'DECLINED' },
+        create: { requestId: 'r-1', teacherId: 't-1', decision: 'DECLINED' },
+      });
+      expect(prisma.helpRequest.update).not.toHaveBeenCalled();
+    });
+
+    it('409s when the request is no longer open', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue({
+        ...openRow,
+        status: 'CLOSED',
+      });
+
+      await expect(service.declineRequest('t-1', false, 'r-1')).rejects.toThrow(
+        'Request is no longer open',
+      );
+    });
+
+    it('403s for teachers without the subject', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(openRow);
+      prisma.teacherSubject.findFirst.mockResolvedValue(null);
+
+      await expect(service.declineRequest('t-2', false, 'r-1')).rejects.toThrow(
+        'Only teachers of this subject can decline',
+      );
+    });
+  });
+
+  describe('closeRequest', () => {
+    const row = {
+      id: 'r-1',
+      learnerId: 'learner-1',
+      teacherId: null,
+      status: 'OPEN',
+    };
+
+    it('closes for the owner', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(row);
+      const closed = { ...row, status: 'CLOSED' };
+      prisma.helpRequest.update.mockResolvedValue(closed);
+
+      await expect(
+        service.closeRequest('learner-1', false, 'r-1'),
+      ).resolves.toEqual(closed);
+      expect(prisma.helpRequest.update).toHaveBeenCalledWith({
+        where: { id: 'r-1' },
+        data: { status: 'CLOSED' },
+        include: {
+          subject: true,
+          links: true,
+          learner: { select: { id: true, name: true } },
+          teacher: { select: { id: true, name: true } },
+          session: true,
+        },
+      });
+    });
+
+    it('closes for the assigned teacher', async () => {
+      const assigned = { ...row, teacherId: 'teacher-1', status: 'ACCEPTED' };
+      prisma.helpRequest.findUnique.mockResolvedValue(assigned);
+      prisma.helpRequest.update.mockResolvedValue({
+        ...assigned,
+        status: 'CLOSED',
+      });
+
+      await expect(
+        service.closeRequest('teacher-1', false, 'r-1'),
+      ).resolves.toBeDefined();
+    });
+
+    it('404s for unauthorized closers without leaking existence', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(row);
+      prisma.user.findUnique.mockResolvedValue({ role: 'STUDENT' });
+      prisma.teacherSubject.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.closeRequest('learner-2', false, 'r-1'),
+      ).rejects.toThrow('Request r-1 not found');
+      expect(prisma.helpRequest.update).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent when already closed', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue({
+        ...row,
+        status: 'CLOSED',
+      });
+
+      await expect(
+        service.closeRequest('learner-1', false, 'r-1'),
+      ).resolves.toBeDefined();
+      expect(prisma.helpRequest.update).not.toHaveBeenCalled();
     });
   });
 });

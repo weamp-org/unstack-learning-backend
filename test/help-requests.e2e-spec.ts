@@ -20,6 +20,22 @@ describe('HelpRequests (e2e)', () => {
     subject,
   };
 
+  const txMock = {
+    helpRequest: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    teacherSubject: {
+      findFirst: jest.fn(),
+    },
+    helpRequestDecision: {
+      upsert: jest.fn(),
+    },
+    helpSession: {
+      create: jest.fn(),
+    },
+  };
+
   const prismaMock = {
     user: {
       findUnique: jest.fn(),
@@ -34,7 +50,14 @@ describe('HelpRequests (e2e)', () => {
       create: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      update: jest.fn(),
     },
+    helpRequestDecision: {
+      upsert: jest.fn(),
+    },
+    $transaction: jest.fn((callback: (tx: typeof txMock) => unknown) =>
+      callback(txMock),
+    ),
   };
 
   async function bootApp(
@@ -166,10 +189,110 @@ describe('HelpRequests (e2e)', () => {
       expect(prismaMock.helpRequest.findMany).toHaveBeenLastCalledWith(
         expect.objectContaining({
           where: {
+            status: 'OPEN',
             subject: { teachers: { some: { teacherId: 'teacher-1' } } },
+            NOT: { decisions: { some: { teacherId: 'teacher-1' } } },
           },
         }),
       );
+    });
+  });
+
+  describe('accepting and declining', () => {
+    let app: INestApplication<App>;
+
+    const openRow = {
+      ...row,
+      status: 'OPEN',
+      teacherId: null,
+    };
+
+    beforeEach(async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ role: 'TEACHER' });
+      app = await bootApp({ authUserId: 'teacher-1' });
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('PATCH /api/v1/requests/:id/accept accepts an open request', async () => {
+      const accepted = {
+        ...openRow,
+        status: 'ACCEPTED',
+        teacherId: 'teacher-1',
+      };
+      txMock.helpRequest.findUnique.mockResolvedValueOnce(openRow);
+      txMock.helpRequest.findUnique.mockResolvedValue(accepted);
+      txMock.teacherSubject.findFirst.mockResolvedValue({
+        teacherId: 'teacher-1',
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1/accept')
+        .send({ sessionUrl: 'https://meet.google.com/abc' })
+        .expect(200)
+        .expect(accepted);
+    });
+
+    it('PATCH accept 409s once taken', async () => {
+      txMock.helpRequest.findUnique.mockResolvedValue({
+        ...openRow,
+        status: 'ACCEPTED',
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1/accept')
+        .send({})
+        .expect(409);
+    });
+
+    it('PATCH /api/v1/requests/:id/decline keeps the request open', async () => {
+      prismaMock.helpRequest.findUnique.mockResolvedValue(openRow);
+      prismaMock.teacherSubject.findFirst.mockResolvedValue({
+        teacherId: 'teacher-1',
+      });
+      prismaMock.helpRequestDecision.upsert.mockResolvedValue({});
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1/decline')
+        .expect(200)
+        .expect({ id: 'r-1', declined: true });
+    });
+
+    it('PATCH accept forbids teachers without the subject', async () => {
+      txMock.helpRequest.findUnique.mockResolvedValue(openRow);
+      txMock.teacherSubject.findFirst.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1/accept')
+        .send({})
+        .expect(403);
+    });
+  });
+
+  describe('closing', () => {
+    let app: INestApplication<App>;
+
+    beforeEach(async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ role: 'STUDENT' });
+      app = await bootApp({ authUserId: 'learner-1' });
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('PATCH /api/v1/requests/:id/close closes for the owner', async () => {
+      prismaMock.helpRequest.findUnique.mockResolvedValue(row);
+      prismaMock.helpRequest.update.mockResolvedValue({
+        ...row,
+        status: 'CLOSED',
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1/close')
+        .expect(200);
     });
   });
 

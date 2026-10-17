@@ -23,7 +23,9 @@ model User {
 
   teachingSubjects TeacherSubject[]
   availability     TeacherAvailability[]
-  helpRequests     HelpRequest[]
+  helpRequests     HelpRequest[]         @relation("LearnerRequests")
+  assignedRequests HelpRequest[]        @relation("AssignedTeacher")
+  requestDecisions HelpRequestDecision[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -72,18 +74,70 @@ model TeacherAvailability {
 model HelpRequest {
   id        String   @id @default(cuid())
   learnerId String
-  learner   User     @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  learner   User     @relation("LearnerRequests", fields: [learnerId], references: [id], onDelete: Cascade)
   subjectId String
   subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Restrict)
   topic     String
   details   String?
   links     HelpLink[]
+  status    HelpRequestStatus @default(OPEN)
+  teacherId String?
+  teacher   User?    @relation("AssignedTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  decisions HelpRequestDecision[]
+  session   HelpSession?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([learnerId])
   @@index([subjectId])
+  @@index([status])
+}
+
+enum HelpRequestStatus {
+  OPEN
+  ACCEPTED
+  CLOSED
+}
+
+/// One teacher's verdict on a request. Declines stay per-teacher so the
+/// request remains open for the other subject teachers; accepts flip the
+/// global status in the same transaction.
+model HelpRequestDecision {
+  id        String       @id @default(cuid())
+  requestId String
+  request   HelpRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  teacherId String
+  teacher   User         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  decision  HelpDecision
+  createdAt DateTime     @default(now())
+
+  @@unique([requestId, teacherId])
+  @@index([teacherId])
+}
+
+enum HelpDecision {
+  ACCEPTED
+  DECLINED
+}
+
+/// The arranged help session. Links are pasted by hand in v1 (source
+/// MANUAL); API-created links drop in later without remodeling.
+model HelpSession {
+  id          String            @id @default(cuid())
+  requestId   String            @unique
+  request     HelpRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sessionUrl  String?
+  scheduledAt DateTime?
+  source      HelpSessionSource @default(MANUAL)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum HelpSessionSource {
+  MANUAL
+  GOOGLE
 }
 
 model HelpLink {
