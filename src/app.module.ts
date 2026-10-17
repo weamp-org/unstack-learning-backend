@@ -8,6 +8,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { ClerkAuthGuard } from './clerk-auth/clerk-auth.guard.js';
 import { GlobalExceptionFilter } from './filters/global-exception.filter.js';
+import { HelpRequestsModule } from './help-requests/help-requests.module.js';
 import { LoggingMiddleware } from './logging/logging.middleware.js';
 import { pinoConfig } from './logging/pino.config.js';
 import { ALL_ROUTES } from './logging/routes.js';
@@ -46,6 +47,7 @@ import { TeachersModule } from './teachers/teachers.module.js';
       },
     ]),
     PrismaModule,
+    HelpRequestsModule,
     SubjectsModule,
     TeachersModule,
     UsersModule,

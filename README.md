@@ -137,6 +137,12 @@ unstack-learning-backend/
 │   │   └── dtos/
 │   │       ├── set-teacher-subjects.dto.ts
 │   │       └── create-availability.dto.ts
+│   ├── help-requests/
+│   │   ├── help-requests.module.ts
+│   │   ├── help-requests.controller.ts # POST/GET /api/v1/requests (queue for teachers)
+│   │   ├── help-requests.service.ts    # Active-subject + context gates, scoped reads
+│   │   └── dtos/
+│   │       └── create-help-request.dto.ts
 │   └── webhooks/
 │       ├── webhooks.module.ts
 │       ├── webhooks.controller.ts  # POST /api/v1/webhooks/clerk

@@ -23,6 +23,7 @@ model User {
 
   teachingSubjects TeacherSubject[]
   availability     TeacherAvailability[]
+  helpRequests     HelpRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -36,6 +37,7 @@ model Subject {
   isActive    Boolean @default(true)
 
   teachers TeacherSubject[]
+  helpRequests HelpRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -63,4 +65,33 @@ model TeacherAvailability {
   startTime String
   endTime   String
   timezone  String @default("Africa/Accra")
+}
+
+/// A learner's request for help. Text + links in v1; media attachments arrive
+/// with the object-storage slice.
+model HelpRequest {
+  id        String   @id @default(cuid())
+  learnerId String
+  learner   User     @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  topic     String
+  details   String?
+  links     HelpLink[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([learnerId])
+  @@index([subjectId])
+}
+
+model HelpLink {
+  id        String      @id @default(cuid())
+  requestId String
+  request   HelpRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  url       String
+  label     String?
+
+  @@index([requestId])
 }
