@@ -150,6 +150,7 @@ unstack-learning-backend/
 ├── test/
 │   ├── jest-e2e.json               # E2E Jest config
 │   ├── app.e2e-spec.ts
+│   ├── help-requests.e2e-spec.ts
 │   ├── subjects.e2e-spec.ts
 │   ├── teachers.e2e-spec.ts
 │   └── users.e2e-spec.ts
