@@ -53,11 +53,13 @@ describe('SubjectsController', () => {
     const subjects = [{ id: '1', name: 'Mathematics' }];
     service.findAll.mockResolvedValue(subjects);
 
-    await expect(
-      controller.findAll('true', {
-        auth: { userId: 'admin-1' },
-      } as unknown as Request),
-    ).resolves.toEqual(subjects);
+    // req.auth is a function once clerkMiddleware() ran.
+    const request = {
+      auth: () => ({ userId: 'admin-1' }),
+    } as unknown as Request;
+    await expect(controller.findAll('true', request)).resolves.toEqual(
+      subjects,
+    );
     expect(service.findAll).toHaveBeenCalledWith({
       includeInactive: true,
       clerkId: 'admin-1',

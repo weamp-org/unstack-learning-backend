@@ -46,12 +46,16 @@ export class SubjectsController {
     @Query('includeInactive') includeInactive: string | undefined,
     @Req() request: Request,
   ) {
-    // req.auth is set by clerkMiddleware() in main.ts. It is absent in e2e
-    // (and getAuth() would throw there), so read it defensively — callers
-    // without it simply get the active-only list.
-    const clerkId =
-      (request as Request & { auth?: { userId?: string | null } }).auth
-        ?.userId ?? null;
+    // req.auth is a function once clerkMiddleware() ran (production); it is
+    // absent in e2e, where getAuth() would throw — so call it directly
+    // instead of getAuth(). Callers without usable auth simply get the
+    // active-only list.
+    const auth = (
+      request as Request & {
+        auth?: () => { userId?: string | null };
+      }
+    ).auth;
+    const clerkId = auth?.().userId ?? null;
     return this.subjectsService.findAll({
       includeInactive: includeInactive === 'true',
       clerkId,

@@ -1,5 +1,6 @@
 import { INestApplication, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { NextFunction, Request, Response } from 'express';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -25,15 +26,18 @@ describe('Subjects (e2e)', () => {
       findMany: jest.fn().mockResolvedValue(subjects),
       findUnique: jest.fn().mockResolvedValue(subjects[0]),
     },
+    user: {
+      findUnique: jest.fn(),
+    },
   };
 
   async function bootApp(
-    denyUnauthenticated = false,
+    options: { deny?: boolean; authUserId?: string } = {},
   ): Promise<INestApplication<App>> {
     const moduleBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
       .useValue(prismaMock);
-    if (denyUnauthenticated) {
+    if (options.deny) {
       // Stand-in for the real ClerkAuthGuard: e2e never runs main.ts's
       // clerkMiddleware() (it needs Clerk keys), so the real guard's
       // getAuth() call would 500 instead of 401 here. The deny stub proves
@@ -48,6 +52,17 @@ describe('Subjects (e2e)', () => {
     const moduleFixture = await moduleBuilder.compile();
     const testApp = moduleFixture.createNestApplication();
     testApp.setGlobalPrefix('api/v1');
+    if (options.authUserId) {
+      // Branded stub-auth middleware (see test/users.e2e-spec.ts): lets the
+      // real guard chain and getAuth() callers run keyless.
+      const userId = options.authUserId;
+      const stubAuth = () => ({ userId, tokenType: 'session_token' });
+      Object.assign(stubAuth, { [Symbol.for('@clerk/express.auth')]: true });
+      testApp.use((req: Request, _res: Response, next: NextFunction) => {
+        (req as unknown as Record<string, unknown>).auth = stubAuth;
+        next();
+      });
+    }
     await testApp.init();
     return testApp;
   }
@@ -80,8 +95,36 @@ describe('Subjects (e2e)', () => {
       .expect(subjects[0]);
   });
 
+  it('GET /api/v1/subjects honors includeInactive for admins', async () => {
+    const all = [
+      ...subjects,
+      {
+        id: 'cuid2',
+        name: 'Physics',
+        slug: 'physics',
+        description: null,
+        isActive: false,
+      },
+    ];
+    prismaMock.subject.findMany.mockResolvedValueOnce(all);
+    prismaMock.user.findUnique.mockResolvedValueOnce({ role: 'ADMIN' });
+    const authed = await bootApp({ authUserId: 'admin-1' });
+    try {
+      await request(authed.getHttpServer())
+        .get('/api/v1/subjects?includeInactive=true')
+        .expect(200)
+        .expect(all);
+      expect(prismaMock.subject.findMany).toHaveBeenLastCalledWith({
+        where: undefined,
+        orderBy: { name: 'asc' },
+      });
+    } finally {
+      await authed.close();
+    }
+  });
+
   it('POST /api/v1/subjects requires authentication', async () => {
-    const guarded = await bootApp(true);
+    const guarded = await bootApp({ deny: true });
     try {
       await request(guarded.getHttpServer())
         .post('/api/v1/subjects')
