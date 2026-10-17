@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { UserRole } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateSubjectDto } from './dtos/create-subject.dto.js';
 import { UpdateSubjectDto } from './dtos/update-subject.dto.js';
@@ -22,12 +23,26 @@ export class SubjectsService {
     });
   }
 
-  findAll() {
-    // Active subjects only: this list feeds the help-request form and may
-    // be shown publicly, so deactivated subjects stay hidden. Admins
-    // reactivate via PATCH /subjects/:id.
+  async findAll(options?: {
+    includeInactive?: boolean;
+    clerkId?: string | null;
+  }) {
+    const { includeInactive = false, clerkId = null } = options ?? {};
+    // includeInactive is admin-only; anyone else silently gets the
+    // active-only list. The role lookup runs only when the flag is set.
+    let showAll = false;
+    if (includeInactive && clerkId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: clerkId },
+        select: { role: true },
+      });
+      showAll = user?.role === UserRole.ADMIN;
+    }
+    // This list feeds the help-request form and may be shown publicly, so
+    // deactivated subjects stay hidden unless an admin asked for them.
+    // Admins reactivate via PATCH /subjects/:id.
     return this.prisma.subject.findMany({
-      where: { isActive: true },
+      where: showAll ? undefined : { isActive: true },
       orderBy: { name: 'asc' },
     });
   }

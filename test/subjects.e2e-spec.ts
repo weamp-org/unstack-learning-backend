@@ -63,6 +63,16 @@ describe('Subjects (e2e)', () => {
       .expect(subjects);
   });
 
+  it('GET /api/v1/subjects ignores includeInactive for anonymous callers', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/subjects?includeInactive=true')
+      .expect(200)
+      .expect(subjects);
+    expect(prismaMock.subject.findMany).toHaveBeenLastCalledWith({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+    });
+  });
   it('GET /api/v1/subjects/:id is public', () => {
     return request(app.getHttpServer())
       .get('/api/v1/subjects/cuid1')

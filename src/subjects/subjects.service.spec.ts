@@ -11,6 +11,9 @@ const mockPrismaService = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  user: {
+    findUnique: jest.fn(),
+  },
 };
 
 describe('SubjectsService', () => {
@@ -73,11 +76,52 @@ describe('SubjectsService', () => {
   });
 
   describe('findAll', () => {
-    it('returns active subjects ordered by name', async () => {
+    it('returns active subjects ordered by name by default', async () => {
       const subjects = [{ id: '1', name: 'Mathematics' }];
       prisma.subject.findMany.mockResolvedValue(subjects);
 
       await expect(service.findAll()).resolves.toEqual(subjects);
+      expect(prisma.subject.findMany).toHaveBeenCalledWith({
+        where: { isActive: true },
+        orderBy: { name: 'asc' },
+      });
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('includes inactive subjects for admins requesting them', async () => {
+      const subjects = [{ id: '1', name: 'Mathematics' }];
+      prisma.user.findUnique.mockResolvedValue({ role: 'ADMIN' });
+      prisma.subject.findMany.mockResolvedValue(subjects);
+
+      await expect(
+        service.findAll({ includeInactive: true, clerkId: 'admin-1' }),
+      ).resolves.toEqual(subjects);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'admin-1' },
+        select: { role: true },
+      });
+      expect(prisma.subject.findMany).toHaveBeenCalledWith({
+        where: undefined,
+        orderBy: { name: 'asc' },
+      });
+    });
+
+    it('ignores includeInactive for non-admins', async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: 'STUDENT' });
+      prisma.subject.findMany.mockResolvedValue([]);
+
+      await service.findAll({ includeInactive: true, clerkId: 'user-1' });
+      expect(prisma.subject.findMany).toHaveBeenCalledWith({
+        where: { isActive: true },
+        orderBy: { name: 'asc' },
+      });
+    });
+
+    it('ignores includeInactive without a signed-in caller', async () => {
+      prisma.subject.findMany.mockResolvedValue([]);
+
+      await service.findAll({ includeInactive: true, clerkId: null });
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
       expect(prisma.subject.findMany).toHaveBeenCalledWith({
         where: { isActive: true },
         orderBy: { name: 'asc' },

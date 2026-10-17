@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import type { Request } from 'express';
 
 import { ClerkAuthGuard } from '../clerk-auth/clerk-auth.guard.js';
 import { RolesGuard } from '../roles/roles.guard.js';
@@ -48,11 +49,31 @@ describe('SubjectsController', () => {
     expect(service.create).toHaveBeenCalledWith(dto);
   });
 
-  it('findAll delegates to the service', async () => {
+  it('findAll passes the flag and caller through to the service', async () => {
     const subjects = [{ id: '1', name: 'Mathematics' }];
     service.findAll.mockResolvedValue(subjects);
 
-    await expect(controller.findAll()).resolves.toEqual(subjects);
+    await expect(
+      controller.findAll('true', {
+        auth: { userId: 'admin-1' },
+      } as unknown as Request),
+    ).resolves.toEqual(subjects);
+    expect(service.findAll).toHaveBeenCalledWith({
+      includeInactive: true,
+      clerkId: 'admin-1',
+    });
+  });
+
+  it('findAll treats missing auth as anonymous', async () => {
+    service.findAll.mockResolvedValue([]);
+
+    await expect(controller.findAll(undefined, {} as Request)).resolves.toEqual(
+      [],
+    );
+    expect(service.findAll).toHaveBeenCalledWith({
+      includeInactive: false,
+      clerkId: null,
+    });
   });
 
   it('findOne delegates to the service', async () => {

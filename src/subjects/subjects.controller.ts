@@ -6,8 +6,12 @@ import {
   Param,
   Patch,
   Post,
+  Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiQuery } from '@nestjs/swagger';
+import type { Request } from 'express';
 
 import { ClerkAuthGuard } from '../clerk-auth/clerk-auth.guard.js';
 import { UserRole } from '../generated/prisma/enums.js';
@@ -31,8 +35,27 @@ export class SubjectsController {
 
   @Public()
   @Get()
-  findAll() {
-    return this.subjectsService.findAll();
+  @ApiQuery({
+    name: 'includeInactive',
+    required: false,
+    type: Boolean,
+    description:
+      'Admins only: include deactivated subjects. Ignored for anyone else.',
+  })
+  findAll(
+    @Query('includeInactive') includeInactive: string | undefined,
+    @Req() request: Request,
+  ) {
+    // req.auth is set by clerkMiddleware() in main.ts. It is absent in e2e
+    // (and getAuth() would throw there), so read it defensively — callers
+    // without it simply get the active-only list.
+    const clerkId =
+      (request as Request & { auth?: { userId?: string | null } }).auth
+        ?.userId ?? null;
+    return this.subjectsService.findAll({
+      includeInactive: includeInactive === 'true',
+      clerkId,
+    });
   }
 
   @Public()
