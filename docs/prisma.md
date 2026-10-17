@@ -165,6 +165,9 @@ const [user, count] = await this.prismaService.$transaction([
 # Create and apply a new migration
 pnpm prisma migrate dev --name add_profile_table
 
+# Seed the database (idempotent upserts, safe to re-run)
+pnpm prisma db seed
+
 # Reset database (drops all data and re-applies all migrations)
 pnpm prisma migrate reset
 

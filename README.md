@@ -178,6 +178,7 @@ The template uses two env files loaded in order: `.env.local` (local overrides, 
 | `pnpm test:cov`           | Run unit tests with coverage                         |
 | `pnpm prisma generate`    | Regenerate Prisma client after schema changes        |
 | `pnpm prisma migrate dev` | Create and apply a new migration                     |
+| `pnpm prisma db seed`     | Seed the database (`prisma/seed.ts`, idempotent)     |
 
 ## API overview
 
