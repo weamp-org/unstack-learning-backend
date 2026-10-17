@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
+  Post,
   Put,
   UnauthorizedException,
   UseGuards,
@@ -12,6 +15,7 @@ import { UserRole } from '../generated/prisma/enums.js';
 import { Roles } from '../roles/roles.decorator.js';
 import { RolesGuard } from '../roles/roles.guard.js';
 import { UserClerkId } from '../user-clerk-id/user-clerk-id.decorator.js';
+import { CreateAvailabilityDto } from './dtos/create-availability.dto.js';
 import { SetTeacherSubjectsDto } from './dtos/set-teacher-subjects.dto.js';
 import { TeachersService } from './teachers.service.js';
 
@@ -34,5 +38,29 @@ export class TeachersController {
   ) {
     if (clerkId === null) throw new UnauthorizedException();
     return this.teachersService.setMySubjects(clerkId, dto.subjectIds);
+  }
+
+  @Get('me/availability')
+  getMyAvailability(@UserClerkId() clerkId: string | null) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.teachersService.getMyAvailability(clerkId);
+  }
+
+  @Post('me/availability')
+  addMyAvailability(
+    @UserClerkId() clerkId: string | null,
+    @Body() dto: CreateAvailabilityDto,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.teachersService.addMyAvailability(clerkId, dto);
+  }
+
+  @Delete('me/availability/:id')
+  removeMyAvailability(
+    @UserClerkId() clerkId: string | null,
+    @Param('id') id: string,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.teachersService.removeMyAvailability(clerkId, id);
   }
 }

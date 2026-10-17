@@ -1,6 +1,12 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service.js';
+import { CreateAvailabilityDto } from './dtos/create-availability.dto.js';
 
 @Injectable()
 export class TeachersService {
@@ -12,6 +18,58 @@ export class TeachersService {
       include: { subject: true },
       orderBy: { subject: { name: 'asc' } },
     });
+  }
+
+  getMyAvailability(clerkId: string) {
+    return this.prisma.teacherAvailability.findMany({
+      where: { teacherId: clerkId },
+      orderBy: [{ weekday: 'asc' }, { startTime: 'asc' }],
+    });
+  }
+
+  async addMyAvailability(clerkId: string, dto: CreateAvailabilityDto) {
+    const { weekday, startTime, endTime } = dto;
+    const timezone = dto.timezone ?? 'Africa/Accra';
+
+    // Zero-padded HH:MM compares lexicographically, so no parsing needed.
+    if (endTime <= startTime) {
+      throw new BadRequestException(
+        'End time must be after start time (overnight windows are not supported)',
+      );
+    }
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: timezone });
+    } catch {
+      throw new BadRequestException(`Unknown timezone: ${timezone}`);
+    }
+
+    const existing = await this.prisma.teacherAvailability.findMany({
+      where: { teacherId: clerkId, weekday },
+    });
+    const clash = existing.find(
+      (window) => window.startTime < endTime && startTime < window.endTime,
+    );
+    if (clash) {
+      throw new ConflictException(
+        `Overlaps with existing window ${clash.startTime}–${clash.endTime}`,
+      );
+    }
+
+    return this.prisma.teacherAvailability.create({
+      data: { teacherId: clerkId, weekday, startTime, endTime, timezone },
+    });
+  }
+
+  async removeMyAvailability(clerkId: string, id: string) {
+    // Scoped lookup: other teachers' windows read as missing rather than
+    // leaking their existence.
+    const window = await this.prisma.teacherAvailability.findFirst({
+      where: { id, teacherId: clerkId },
+    });
+    if (!window) {
+      throw new NotFoundException(`Availability window ${id} not found`);
+    }
+    return this.prisma.teacherAvailability.delete({ where: { id } });
   }
 
   async setMySubjects(clerkId: string, subjectIds: string[]) {

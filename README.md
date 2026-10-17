@@ -132,10 +132,11 @@ unstack-learning-backend/
 │   │       └── update-subject.dto.ts
 │   ├── teachers/
 │   │   ├── teachers.module.ts
-│   │   ├── teachers.controller.ts  # GET/PUT /api/v1/teachers/me/subjects (teacher+admin)
-│   │   ├── teachers.service.ts     # Transactional subject-set replacement
+│   │   ├── teachers.controller.ts  # /api/v1/teachers/me/subjects + /me/availability (teacher+admin)
+│   │   ├── teachers.service.ts     # Transactional subject-set replacement + availability windows
 │   │   └── dtos/
-│   │       └── set-teacher-subjects.dto.ts
+│   │       ├── set-teacher-subjects.dto.ts
+│   │       └── create-availability.dto.ts
 │   └── webhooks/
 │       ├── webhooks.module.ts
 │       ├── webhooks.controller.ts  # POST /api/v1/webhooks/clerk

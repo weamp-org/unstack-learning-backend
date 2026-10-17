@@ -9,6 +9,9 @@ import { TeachersService } from './teachers.service.js';
 const mockTeachersService = {
   getMySubjects: jest.fn(),
   setMySubjects: jest.fn(),
+  getMyAvailability: jest.fn(),
+  addMyAvailability: jest.fn(),
+  removeMyAvailability: jest.fn(),
 };
 
 describe('TeachersController', () => {
@@ -65,5 +68,56 @@ describe('TeachersController', () => {
       UnauthorizedException,
     );
     expect(service.setMySubjects).not.toHaveBeenCalled();
+  });
+
+  it('getMyAvailability delegates with the caller id', async () => {
+    const windows = [{ id: 'w-1' }];
+    service.getMyAvailability.mockResolvedValue(windows);
+
+    await expect(controller.getMyAvailability('t-1')).resolves.toEqual(windows);
+    expect(service.getMyAvailability).toHaveBeenCalledWith('t-1');
+  });
+
+  it('getMyAvailability throws without a caller id', () => {
+    expect(() => controller.getMyAvailability(null)).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.getMyAvailability).not.toHaveBeenCalled();
+  });
+
+  it('addMyAvailability delegates with the caller id and DTO', async () => {
+    const dto = { weekday: 1, startTime: '14:00', endTime: '18:00' };
+    const created = { id: 'w-1', teacherId: 't-1', ...dto };
+    service.addMyAvailability.mockResolvedValue(created);
+
+    await expect(controller.addMyAvailability('t-1', dto)).resolves.toEqual(
+      created,
+    );
+    expect(service.addMyAvailability).toHaveBeenCalledWith('t-1', dto);
+  });
+
+  it('addMyAvailability throws without a caller id', () => {
+    const dto = { weekday: 1, startTime: '14:00', endTime: '18:00' };
+    expect(() => controller.addMyAvailability(null, dto)).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.addMyAvailability).not.toHaveBeenCalled();
+  });
+
+  it('removeMyAvailability delegates with the caller id and window id', async () => {
+    const window = { id: 'w-1', teacherId: 't-1' };
+    service.removeMyAvailability.mockResolvedValue(window);
+
+    await expect(
+      controller.removeMyAvailability('t-1', 'w-1'),
+    ).resolves.toEqual(window);
+    expect(service.removeMyAvailability).toHaveBeenCalledWith('t-1', 'w-1');
+  });
+
+  it('removeMyAvailability throws without a caller id', () => {
+    expect(() => controller.removeMyAvailability(null, 'w-1')).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.removeMyAvailability).not.toHaveBeenCalled();
   });
 });

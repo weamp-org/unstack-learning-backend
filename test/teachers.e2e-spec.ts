@@ -36,6 +36,12 @@ describe('Teachers (e2e)', () => {
       deleteMany: jest.fn(),
       createMany: jest.fn(),
     },
+    teacherAvailability: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      delete: jest.fn(),
+    },
     $transaction: jest.fn((callback: (tx: typeof txMock) => unknown) =>
       callback(txMock),
     ),
@@ -104,6 +110,66 @@ describe('Teachers (e2e)', () => {
         .send({ subjectIds: ['nope'] })
         .expect(400);
     });
+
+    it('GET /api/v1/teachers/me/availability returns the windows', async () => {
+      const windows = [
+        {
+          id: 'w-1',
+          teacherId: 'teacher-1',
+          weekday: 1,
+          startTime: '14:00',
+          endTime: '18:00',
+          timezone: 'Africa/Accra',
+        },
+      ];
+      prismaMock.teacherAvailability.findMany.mockResolvedValue(windows);
+
+      await request(app.getHttpServer())
+        .get('/api/v1/teachers/me/availability')
+        .expect(200)
+        .expect(windows);
+    });
+
+    it('POST /api/v1/teachers/me/availability adds a window', async () => {
+      const created = {
+        id: 'w-1',
+        teacherId: 'teacher-1',
+        weekday: 1,
+        startTime: '14:00',
+        endTime: '18:00',
+        timezone: 'Africa/Accra',
+      };
+      prismaMock.teacherAvailability.findMany.mockResolvedValue([]);
+      prismaMock.teacherAvailability.create.mockResolvedValue(created);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/teachers/me/availability')
+        .send({ weekday: 1, startTime: '14:00', endTime: '18:00' })
+        .expect(201)
+        .expect(created);
+    });
+
+    it('POST rejects overlapping windows', async () => {
+      prismaMock.teacherAvailability.findMany.mockResolvedValue([
+        { startTime: '16:00', endTime: '20:00' },
+      ]);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/teachers/me/availability')
+        .send({ weekday: 1, startTime: '14:00', endTime: '18:00' })
+        .expect(409);
+    });
+
+    it('DELETE /api/v1/teachers/me/availability/:id removes a window', async () => {
+      const window = { id: 'w-1', teacherId: 'teacher-1' };
+      prismaMock.teacherAvailability.findFirst.mockResolvedValue(window);
+      prismaMock.teacherAvailability.delete.mockResolvedValue(window);
+
+      await request(app.getHttpServer())
+        .delete('/api/v1/teachers/me/availability/w-1')
+        .expect(200)
+        .expect(window);
+    });
   });
 
   describe('as a student', () => {
@@ -122,6 +188,13 @@ describe('Teachers (e2e)', () => {
       await request(app.getHttpServer())
         .put('/api/v1/teachers/me/subjects')
         .send({ subjectIds: [] })
+        .expect(403);
+    });
+
+    it('POST /api/v1/teachers/me/availability is forbidden', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/teachers/me/availability')
+        .send({ weekday: 1, startTime: '14:00', endTime: '18:00' })
         .expect(403);
     });
   });
