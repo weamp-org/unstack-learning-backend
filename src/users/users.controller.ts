@@ -2,8 +2,10 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   Param,
   Patch,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 
@@ -19,6 +21,16 @@ import { UsersService } from './users.service.js';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  // Declared before ':id/role' so a future '@Get(':id')' can't shadow it —
+  // Nest matches routes in declaration order.
+  @Get('me')
+  findMe(@UserClerkId() clerkId: string | null) {
+    // ClerkAuthGuard guarantees an authenticated caller with a provisioned
+    // record; the null check is defensive against guard ordering changes.
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.usersService.findMe(clerkId);
+  }
 
   @Roles(UserRole.ADMIN)
   @Patch(':id/role')

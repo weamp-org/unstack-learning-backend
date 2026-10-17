@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { UsersController } from './users.controller';
@@ -12,6 +12,7 @@ describe('UsersController', () => {
   let controller: UsersController;
   let service: {
     updateRole: jest.Mock;
+    findMe: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -22,6 +23,7 @@ describe('UsersController', () => {
           provide: UsersService,
           useValue: {
             updateRole: jest.fn(),
+            findMe: jest.fn(),
           },
         },
       ],
@@ -40,6 +42,21 @@ describe('UsersController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('findMe', () => {
+    it('delegates to service.findMe with the caller id', async () => {
+      const user = { id: 'clerk_123', role: UserRole.STUDENT };
+      service.findMe.mockResolvedValue(user);
+
+      await expect(controller.findMe('clerk_123')).resolves.toBe(user);
+      expect(service.findMe).toHaveBeenCalledWith('clerk_123');
+    });
+
+    it('throws UnauthorizedException without a caller id', () => {
+      expect(() => controller.findMe(null)).toThrow(UnauthorizedException);
+      expect(service.findMe).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateRole', () => {

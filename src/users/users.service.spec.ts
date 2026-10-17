@@ -9,6 +9,7 @@ describe('UsersService', () => {
   let prisma: {
     user: {
       update: jest.Mock;
+      findUnique: jest.Mock;
     };
   };
 
@@ -21,6 +22,7 @@ describe('UsersService', () => {
           useValue: {
             user: {
               update: jest.fn(),
+              findUnique: jest.fn(),
             },
           },
         },
@@ -33,6 +35,31 @@ describe('UsersService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('findMe', () => {
+    it('returns the user record when found', async () => {
+      const user = {
+        id: 'clerk_123',
+        email: 'john@example.com',
+        name: 'John Doe',
+        role: UserRole.STUDENT,
+      };
+      prisma.user.findUnique.mockResolvedValue(user);
+
+      await expect(service.findMe('clerk_123')).resolves.toEqual(user);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'clerk_123' },
+      });
+    });
+
+    it('throws 404 when missing', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.findMe('missing')).rejects.toThrow(
+        'User missing not found',
+      );
+    });
   });
 
   describe('updateRole', () => {
