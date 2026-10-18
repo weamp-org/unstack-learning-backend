@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HelpRequestsService } from './help-requests.service.js';
 
@@ -69,6 +70,13 @@ const dto = {
   details: 'LIATE ordering confuses me',
 };
 
+const mockNotificationsService = {
+  notifyRequestCreated: jest.fn(),
+  notifyRequestAccepted: jest.fn(),
+  notifySessionUpdated: jest.fn(),
+  escalateStaleRequests: jest.fn(),
+};
+
 describe('HelpRequestsService', () => {
   let service: HelpRequestsService;
   let prisma: typeof mockPrismaService;
@@ -79,6 +87,10 @@ describe('HelpRequestsService', () => {
       providers: [
         HelpRequestsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        {
+          provide: NotificationsService,
+          useValue: mockNotificationsService,
+        },
       ],
     }).compile();
 

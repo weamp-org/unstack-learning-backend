@@ -6,6 +6,7 @@ import { App } from 'supertest/types';
 
 import { AppModule } from './../src/app.module';
 import { ClerkAuthGuard } from './../src/clerk-auth/clerk-auth.guard';
+import { NotificationsService } from './../src/notifications/notifications.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 
 describe('HelpRequests (e2e)', () => {
@@ -64,12 +65,21 @@ describe('HelpRequests (e2e)', () => {
     ),
   };
 
+  const notificationsMock = {
+    notifyRequestCreated: jest.fn(),
+    notifyRequestAccepted: jest.fn(),
+    notifySessionUpdated: jest.fn(),
+    escalateStaleRequests: jest.fn(),
+  };
+
   async function bootApp(
     options: { deny?: boolean; authUserId?: string } = {},
   ): Promise<INestApplication<App>> {
     const moduleBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
-      .useValue(prismaMock);
+      .useValue(prismaMock)
+      .overrideProvider(NotificationsService)
+      .useValue(notificationsMock);
     if (options.deny) {
       // Stand-in for the real ClerkAuthGuard (see test/subjects.e2e-spec.ts):
       // proves the route is guard-wired without Clerk keys.

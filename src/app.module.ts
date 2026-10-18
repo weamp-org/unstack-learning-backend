@@ -12,6 +12,7 @@ import { HelpRequestsModule } from './help-requests/help-requests.module.js';
 import { LoggingMiddleware } from './logging/logging.middleware.js';
 import { pinoConfig } from './logging/pino.config.js';
 import { ALL_ROUTES } from './logging/routes.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { UsersModule } from './users/users.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
@@ -48,6 +49,7 @@ import { TeachersModule } from './teachers/teachers.module.js';
     ]),
     PrismaModule,
     HelpRequestsModule,
+    NotificationsModule,
     SubjectsModule,
     TeachersModule,
     UsersModule,
