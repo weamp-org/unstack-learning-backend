@@ -293,11 +293,15 @@ describe('NotificationsService', () => {
         title: 'New request in Biology',
         body: 'Mitosis phases',
         url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [150, 75, 150],
       });
       expect(mockPushService.sendToUser).toHaveBeenCalledWith('t-2', {
         title: 'New request in Biology',
         body: 'Mitosis phases',
         url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [150, 75, 150],
       });
     });
 
@@ -373,6 +377,8 @@ describe('NotificationsService', () => {
         title: 'Your request was accepted',
         body: 'Tara will help with "Mitosis".',
         url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [100],
       });
     });
 
@@ -384,6 +390,10 @@ describe('NotificationsService', () => {
         title: 'Session details updated',
         body: 'New time or link for "Mitosis".',
         url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [100, 50, 100],
+        renotify: true,
+        requireInteraction: true,
       });
     });
 
@@ -460,6 +470,9 @@ describe('NotificationsService', () => {
         title: 'New request in Biology',
         body: 'Mitosis',
         url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [150, 75, 150],
+        silent: true,
       });
     });
   });

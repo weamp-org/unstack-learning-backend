@@ -150,6 +150,9 @@ export class NotificationsService {
         title: `New request in ${context?.subject.name ?? 'a subject'}`,
         body: context?.topic ?? 'A learner needs help.',
         url: `/requests/${requestId}`,
+        // One live card per request; the double buzz marks teacher urgency.
+        tag: `request-${requestId}`,
+        vibrate: [150, 75, 150],
       });
     }
     return { notified, suppressed };
@@ -190,12 +193,20 @@ export class NotificationsService {
         title: 'Your request was accepted',
         body: `${actor?.name ?? 'A teacher'} will help with "${topic}".`,
         url: `/requests/${requestId}`,
+        tag: `request-${requestId}`,
+        vibrate: [100],
       });
     } else {
       await this.pushToUsers([learnerId], {
         title: 'Session details updated',
         body: `New time or link for "${topic}".`,
         url: `/requests/${requestId}`,
+        // Replaces the accept card (same tag) but re-alerts and sticks
+        // around: a missed reschedule means a no-show.
+        tag: `request-${requestId}`,
+        vibrate: [100, 50, 100],
+        renotify: true,
+        requireInteraction: true,
       });
     }
     return row;
@@ -313,6 +324,10 @@ export class NotificationsService {
               title: `New request in ${request.subject.name}`,
               body: request.topic,
               url: `/requests/${request.id}`,
+              tag: `request-${request.id}`,
+              vibrate: [150, 75, 150],
+              // Escalation is a backstop, not an alarm: inbox-first, no buzz.
+              silent: true,
             });
           }
         }),
