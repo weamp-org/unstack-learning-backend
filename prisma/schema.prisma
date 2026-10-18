@@ -23,6 +23,7 @@ model User {
 
   teachingSubjects TeacherSubject[]
   availability     TeacherAvailability[]
+  availabilityOverrides TeacherAvailabilityOverride[]
   helpRequests     HelpRequest[]         @relation("LearnerRequests")
   assignedRequests HelpRequest[]        @relation("AssignedTeacher")
   requestDecisions HelpRequestDecision[]
@@ -70,6 +71,29 @@ model TeacherAvailability {
   startTime String
   endTime   String
   timezone  String @default("Africa/Accra")
+}
+
+/// A one-off exception to the weekly pattern. Dates are YYYY-MM-DD in the
+/// override's own timezone; matching checks the override first — an
+/// UNAVAILABLE covering now always wins, an AVAILABLE covering now beats a
+/// closed schedule — and falls back to TeacherAvailability otherwise.
+/// Past rows are purged on read, so the table only holds today + future.
+enum AvailabilityOverrideKind {
+  AVAILABLE
+  UNAVAILABLE
+}
+
+model TeacherAvailabilityOverride {
+  id        String                   @id @default(cuid())
+  teacherId String
+  teacher   User                     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  date      String
+  startTime String
+  endTime   String
+  timezone  String                   @default("Africa/Accra")
+  kind      AvailabilityOverrideKind
+
+  @@index([teacherId])
 }
 
 /// A learner's request for help. Text + links in v1; media attachments arrive

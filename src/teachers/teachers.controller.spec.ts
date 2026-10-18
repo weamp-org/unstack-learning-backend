@@ -12,6 +12,9 @@ const mockTeachersService = {
   getMyAvailability: jest.fn(),
   addMyAvailability: jest.fn(),
   removeMyAvailability: jest.fn(),
+  getMyOverrides: jest.fn(),
+  addMyOverride: jest.fn(),
+  removeMyOverride: jest.fn(),
 };
 
 describe('TeachersController', () => {
@@ -119,5 +122,66 @@ describe('TeachersController', () => {
       UnauthorizedException,
     );
     expect(service.removeMyAvailability).not.toHaveBeenCalled();
+  });
+
+  it('getMyOverrides delegates with the caller id', async () => {
+    const rows = [{ id: 'o-1' }];
+    service.getMyOverrides.mockResolvedValue(rows);
+
+    await expect(controller.getMyOverrides('t-1')).resolves.toEqual(rows);
+    expect(service.getMyOverrides).toHaveBeenCalledWith('t-1');
+  });
+
+  it('getMyOverrides throws without a caller id', () => {
+    expect(() => controller.getMyOverrides(null)).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.getMyOverrides).not.toHaveBeenCalled();
+  });
+
+  it('addMyOverride delegates with the caller id and DTO', async () => {
+    const dto = {
+      date: '2099-01-01',
+      startTime: '14:00',
+      endTime: '18:00',
+      kind: 'UNAVAILABLE' as const,
+    };
+    const created = { id: 'o-1', ...dto };
+    service.addMyOverride.mockResolvedValue(created);
+
+    await expect(controller.addMyOverride('t-1', dto)).resolves.toEqual(
+      created,
+    );
+    expect(service.addMyOverride).toHaveBeenCalledWith('t-1', dto);
+  });
+
+  it('addMyOverride throws without a caller id', () => {
+    const dto = {
+      date: '2099-01-01',
+      startTime: '14:00',
+      endTime: '18:00',
+      kind: 'UNAVAILABLE' as const,
+    };
+    expect(() => controller.addMyOverride(null, dto)).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.addMyOverride).not.toHaveBeenCalled();
+  });
+
+  it('removeMyOverride delegates with the caller id and override id', async () => {
+    const override = { id: 'o-1', teacherId: 't-1' };
+    service.removeMyOverride.mockResolvedValue(override);
+
+    await expect(controller.removeMyOverride('t-1', 'o-1')).resolves.toEqual(
+      override,
+    );
+    expect(service.removeMyOverride).toHaveBeenCalledWith('t-1', 'o-1');
+  });
+
+  it('removeMyOverride throws without a caller id', () => {
+    expect(() => controller.removeMyOverride(null, 'o-1')).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.removeMyOverride).not.toHaveBeenCalled();
   });
 });
