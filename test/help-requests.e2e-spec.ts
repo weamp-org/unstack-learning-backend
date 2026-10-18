@@ -239,6 +239,18 @@ describe('HelpRequests (e2e)', () => {
         .expect(accepted);
     });
 
+    it('PATCH accept 400s for past session times', async () => {
+      txMock.helpRequest.findUnique.mockResolvedValue({
+        ...openRow,
+        status: 'OPEN',
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1/accept')
+        .send({ scheduledAt: '2020-01-01T00:00:00.000Z' })
+        .expect(400);
+    });
+
     it('PATCH accept 409s once taken', async () => {
       txMock.helpRequest.findUnique.mockResolvedValue({
         ...openRow,

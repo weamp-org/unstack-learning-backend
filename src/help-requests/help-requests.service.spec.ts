@@ -375,6 +375,15 @@ describe('HelpRequestsService', () => {
         service.acceptRequest('t-1', false, 'r-1', { scheduledAt: 'soon' }),
       ).rejects.toThrow('scheduledAt must be a valid datetime');
     });
+
+    it('400s for past session times', async () => {
+      await expect(
+        service.acceptRequest('t-1', false, 'r-1', {
+          scheduledAt: '2020-01-01T00:00:00.000Z',
+        }),
+      ).rejects.toThrow('scheduledAt must be in the future');
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
   });
 
   describe('declineRequest', () => {
@@ -556,6 +565,17 @@ describe('HelpRequestsService', () => {
           scheduledAt: 'soon',
         }),
       ).rejects.toThrow('scheduledAt must be a valid datetime');
+    });
+
+    it('400s for past session times', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(row);
+
+      await expect(
+        service.updateSession('teacher-1', false, 'r-1', {
+          scheduledAt: '2020-01-01T00:00:00.000Z',
+        }),
+      ).rejects.toThrow('scheduledAt must be in the future');
+      expect(prisma.helpSession.update).not.toHaveBeenCalled();
     });
   });
 });

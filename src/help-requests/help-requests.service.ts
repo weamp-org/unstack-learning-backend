@@ -153,6 +153,9 @@ export class HelpRequestsService {
       if (Number.isNaN(scheduledAt.getTime())) {
         throw new BadRequestException('scheduledAt must be a valid datetime');
       }
+      if (scheduledAt.getTime() <= Date.now()) {
+        throw new BadRequestException('scheduledAt must be in the future');
+      }
     }
 
     // First accepter wins: the status check and writes share a transaction,
@@ -265,6 +268,9 @@ export class HelpRequestsService {
       scheduledAt = new Date(dto.scheduledAt);
       if (Number.isNaN(scheduledAt.getTime())) {
         throw new BadRequestException('scheduledAt must be a valid datetime');
+      }
+      if (scheduledAt.getTime() <= Date.now()) {
+        throw new BadRequestException('scheduledAt must be in the future');
       }
     }
 
