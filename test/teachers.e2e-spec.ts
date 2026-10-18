@@ -42,6 +42,13 @@ describe('Teachers (e2e)', () => {
       create: jest.fn(),
       delete: jest.fn(),
     },
+    teacherAvailabilityOverride: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      delete: jest.fn(),
+    },
     $transaction: jest.fn((callback: (tx: typeof txMock) => unknown) =>
       callback(txMock),
     ),
@@ -170,6 +177,103 @@ describe('Teachers (e2e)', () => {
         .expect(200)
         .expect(window);
     });
+
+    it('GET /api/v1/teachers/me/overrides returns upcoming overrides', async () => {
+      const overrides = [
+        {
+          id: 'o-1',
+          teacherId: 'teacher-1',
+          date: '2099-01-01',
+          startTime: '14:00',
+          endTime: '18:00',
+          timezone: 'Africa/Accra',
+          kind: 'UNAVAILABLE',
+        },
+      ];
+      prismaMock.teacherAvailabilityOverride.deleteMany.mockResolvedValue({
+        count: 0,
+      });
+      prismaMock.teacherAvailabilityOverride.findMany.mockResolvedValue(
+        overrides,
+      );
+
+      await request(app.getHttpServer())
+        .get('/api/v1/teachers/me/overrides')
+        .expect(200)
+        .expect(overrides);
+    });
+
+    it('POST /api/v1/teachers/me/overrides adds an override', async () => {
+      const created = {
+        id: 'o-1',
+        teacherId: 'teacher-1',
+        date: '2099-01-01',
+        startTime: '14:00',
+        endTime: '18:00',
+        timezone: 'Africa/Accra',
+        kind: 'UNAVAILABLE',
+      };
+      prismaMock.teacherAvailabilityOverride.deleteMany.mockResolvedValue({
+        count: 0,
+      });
+      prismaMock.teacherAvailabilityOverride.findMany.mockResolvedValue([]);
+      prismaMock.teacherAvailabilityOverride.create.mockResolvedValue(created);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/teachers/me/overrides')
+        .send({
+          date: '2099-01-01',
+          startTime: '14:00',
+          endTime: '18:00',
+          kind: 'UNAVAILABLE',
+        })
+        .expect(201)
+        .expect(created);
+    });
+
+    it('POST overrides rejects past dates', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/teachers/me/overrides')
+        .send({
+          date: '2000-01-01',
+          startTime: '14:00',
+          endTime: '18:00',
+          kind: 'AVAILABLE',
+        })
+        .expect(400);
+    });
+
+    it('POST overrides rejects same-date overlaps', async () => {
+      prismaMock.teacherAvailabilityOverride.deleteMany.mockResolvedValue({
+        count: 0,
+      });
+      prismaMock.teacherAvailabilityOverride.findMany.mockResolvedValue([
+        { startTime: '16:00', endTime: '20:00', kind: 'AVAILABLE' },
+      ]);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/teachers/me/overrides')
+        .send({
+          date: '2099-01-01',
+          startTime: '14:00',
+          endTime: '18:00',
+          kind: 'UNAVAILABLE',
+        })
+        .expect(409);
+    });
+
+    it('DELETE /api/v1/teachers/me/overrides/:id removes an override', async () => {
+      const override = { id: 'o-1', teacherId: 'teacher-1' };
+      prismaMock.teacherAvailabilityOverride.findFirst.mockResolvedValue(
+        override,
+      );
+      prismaMock.teacherAvailabilityOverride.delete.mockResolvedValue(override);
+
+      await request(app.getHttpServer())
+        .delete('/api/v1/teachers/me/overrides/o-1')
+        .expect(200)
+        .expect(override);
+    });
   });
 
   describe('as a student', () => {
@@ -195,6 +299,18 @@ describe('Teachers (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/v1/teachers/me/availability')
         .send({ weekday: 1, startTime: '14:00', endTime: '18:00' })
+        .expect(403);
+    });
+
+    it('POST /api/v1/teachers/me/overrides is forbidden', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/teachers/me/overrides')
+        .send({
+          date: '2099-01-01',
+          startTime: '14:00',
+          endTime: '18:00',
+          kind: 'UNAVAILABLE',
+        })
         .expect(403);
     });
   });

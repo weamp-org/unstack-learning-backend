@@ -24,6 +24,13 @@ const mockPrismaService = {
     create: jest.fn(),
     delete: jest.fn(),
   },
+  teacherAvailabilityOverride: {
+    findMany: jest.fn(),
+    deleteMany: jest.fn(),
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    delete: jest.fn(),
+  },
   $transaction: jest.fn((callback: (tx: typeof mockTx) => unknown) =>
     callback(mockTx),
   ),
@@ -148,6 +155,124 @@ describe('TeachersService', () => {
         'Availability window nope not found',
       );
       expect(prisma.teacherAvailability.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMyOverrides', () => {
+    it('purges expired rows then returns the rest ordered by date', async () => {
+      const rows = [{ id: 'o-1' }];
+      let seenCutoff: unknown;
+      prisma.teacherAvailabilityOverride.deleteMany.mockImplementation(
+        (args: { where: { teacherId: string; date: { lt: string } } }) => {
+          seenCutoff = args.where.date.lt;
+          return Promise.resolve({ count: 1 });
+        },
+      );
+      prisma.teacherAvailabilityOverride.findMany.mockResolvedValue(rows);
+
+      await expect(service.getMyOverrides('t-1')).resolves.toEqual(rows);
+      expect(seenCutoff).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(prisma.teacherAvailabilityOverride.findMany).toHaveBeenCalledWith({
+        where: { teacherId: 't-1' },
+        orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+      });
+    });
+  });
+  describe('addMyOverride', () => {
+    const dto = {
+      date: '2099-01-01',
+      startTime: '14:00',
+      endTime: '18:00',
+      kind: 'UNAVAILABLE' as const,
+    };
+
+    beforeEach(() => {
+      prisma.teacherAvailabilityOverride.deleteMany.mockResolvedValue({
+        count: 0,
+      });
+      prisma.teacherAvailabilityOverride.findMany.mockResolvedValue([]);
+    });
+
+    it('creates the override with the default timezone', async () => {
+      const created = { id: 'o-1', teacherId: 't-1', ...dto };
+      prisma.teacherAvailabilityOverride.create.mockResolvedValue(created);
+
+      await expect(service.addMyOverride('t-1', dto)).resolves.toEqual(created);
+      expect(prisma.teacherAvailabilityOverride.create).toHaveBeenCalledWith({
+        data: { teacherId: 't-1', ...dto, timezone: 'Africa/Accra' },
+      });
+    });
+
+    it('rejects overnight overrides', async () => {
+      await expect(
+        service.addMyOverride('t-1', {
+          ...dto,
+          startTime: '18:00',
+          endTime: '14:00',
+        }),
+      ).rejects.toThrow('End time must be after start time');
+      expect(prisma.teacherAvailabilityOverride.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects impossible calendar dates', async () => {
+      await expect(
+        service.addMyOverride('t-1', { ...dto, date: '2099-02-30' }),
+      ).rejects.toThrow('Date must be a real YYYY-MM-DD calendar date');
+      expect(prisma.teacherAvailabilityOverride.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects past dates', async () => {
+      await expect(
+        service.addMyOverride('t-1', { ...dto, date: '2000-01-01' }),
+      ).rejects.toThrow('Date must be today or later');
+      expect(prisma.teacherAvailabilityOverride.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects unknown timezones', async () => {
+      await expect(
+        service.addMyOverride('t-1', { ...dto, timezone: 'Mars/Olympus' }),
+      ).rejects.toThrow('Unknown timezone: Mars/Olympus');
+      expect(prisma.teacherAvailabilityOverride.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects overrides overlapping the same date', async () => {
+      prisma.teacherAvailabilityOverride.findMany.mockResolvedValue([
+        { startTime: '16:00', endTime: '20:00', kind: 'AVAILABLE' },
+      ]);
+
+      await expect(service.addMyOverride('t-1', dto)).rejects.toThrow(
+        'Overlaps with existing available override 16:00–20:00',
+      );
+      expect(prisma.teacherAvailabilityOverride.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeMyOverride', () => {
+    it('deletes an owned override', async () => {
+      const override = { id: 'o-1', teacherId: 't-1' };
+      prisma.teacherAvailabilityOverride.findFirst.mockResolvedValue(override);
+      prisma.teacherAvailabilityOverride.delete.mockResolvedValue(override);
+
+      await expect(service.removeMyOverride('t-1', 'o-1')).resolves.toEqual(
+        override,
+      );
+      expect(prisma.teacherAvailabilityOverride.findFirst).toHaveBeenCalledWith(
+        {
+          where: { id: 'o-1', teacherId: 't-1' },
+        },
+      );
+      expect(prisma.teacherAvailabilityOverride.delete).toHaveBeenCalledWith({
+        where: { id: 'o-1' },
+      });
+    });
+
+    it('throws 404 for missing or foreign overrides', async () => {
+      prisma.teacherAvailabilityOverride.findFirst.mockResolvedValue(null);
+
+      await expect(service.removeMyOverride('t-1', 'nope')).rejects.toThrow(
+        'Availability override nope not found',
+      );
+      expect(prisma.teacherAvailabilityOverride.delete).not.toHaveBeenCalled();
     });
   });
 

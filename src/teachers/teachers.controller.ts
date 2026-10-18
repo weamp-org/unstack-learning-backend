@@ -16,6 +16,7 @@ import { Roles } from '../roles/roles.decorator.js';
 import { RolesGuard } from '../roles/roles.guard.js';
 import { UserClerkId } from '../user-clerk-id/user-clerk-id.decorator.js';
 import { CreateAvailabilityDto } from './dtos/create-availability.dto.js';
+import { CreateAvailabilityOverrideDto } from './dtos/create-availability-override.dto.js';
 import { SetTeacherSubjectsDto } from './dtos/set-teacher-subjects.dto.js';
 import { TeachersService } from './teachers.service.js';
 
@@ -62,5 +63,29 @@ export class TeachersController {
   ) {
     if (clerkId === null) throw new UnauthorizedException();
     return this.teachersService.removeMyAvailability(clerkId, id);
+  }
+
+  @Get('me/overrides')
+  getMyOverrides(@UserClerkId() clerkId: string | null) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.teachersService.getMyOverrides(clerkId);
+  }
+
+  @Post('me/overrides')
+  addMyOverride(
+    @UserClerkId() clerkId: string | null,
+    @Body() dto: CreateAvailabilityOverrideDto,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.teachersService.addMyOverride(clerkId, dto);
+  }
+
+  @Delete('me/overrides/:id')
+  removeMyOverride(
+    @UserClerkId() clerkId: string | null,
+    @Param('id') id: string,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.teachersService.removeMyOverride(clerkId, id);
   }
 }

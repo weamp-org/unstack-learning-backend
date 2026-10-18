@@ -3,7 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationType } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PushPayload, PushService } from '../push/push.service.js';
-import { isAvailableNow } from './availability.js';
+import { isAvailableNow, overrideCutoff } from './availability.js';
 
 /// A stale OPEN request re-notifies the teachers who were suppressed by the
 /// availability filter. Replaced by a real cron once scheduling exists; until
@@ -114,18 +114,37 @@ export class NotificationsService {
     const windows = await this.prisma.teacherAvailability.findMany({
       where: { teacherId: { in: recipientIds } },
     });
+    const cutoff = overrideCutoff(now);
+    // Expired overrides are purged on read; only today + future rows can
+    // still match, so only those are loaded.
+    await this.prisma.teacherAvailabilityOverride.deleteMany({
+      where: { teacherId: { in: recipientIds }, date: { lt: cutoff } },
+    });
+    const overrides = await this.prisma.teacherAvailabilityOverride.findMany({
+      where: { teacherId: { in: recipientIds }, date: { gte: cutoff } },
+    });
     const byTeacher = new Map<string, typeof windows>();
     for (const window of windows) {
       const list = byTeacher.get(window.teacherId) ?? [];
       list.push(window);
       byTeacher.set(window.teacherId, list);
     }
+    const overridesByTeacher = new Map<string, typeof overrides>();
+    for (const override of overrides) {
+      const list = overridesByTeacher.get(override.teacherId) ?? [];
+      list.push(override);
+      overridesByTeacher.set(override.teacherId, list);
+    }
 
     const notified: string[] = [];
     const suppressed: string[] = [];
     for (const id of recipientIds) {
       const teacherWindows = byTeacher.get(id) ?? [];
-      if (teacherWindows.length === 0 || isAvailableNow(teacherWindows, now)) {
+      const teacherOverrides = overridesByTeacher.get(id) ?? [];
+      if (
+        teacherWindows.length === 0 ||
+        isAvailableNow(teacherWindows, teacherOverrides, now)
+      ) {
         notified.push(id);
       } else {
         suppressed.push(id);

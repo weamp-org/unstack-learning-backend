@@ -5,8 +5,26 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { localDateStr, overrideCutoff } from '../notifications/availability.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateAvailabilityDto } from './dtos/create-availability.dto.js';
+import { CreateAvailabilityOverrideDto } from './dtos/create-availability-override.dto.js';
+
+function isCalendarDate(date: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const dt = new Date(0);
+  dt.setUTCHours(0, 0, 0, 0);
+  dt.setUTCFullYear(year, month - 1, day);
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  );
+}
 
 @Injectable()
 export class TeachersService {
@@ -70,6 +88,85 @@ export class TeachersService {
       throw new NotFoundException(`Availability window ${id} not found`);
     }
     return this.prisma.teacherAvailability.delete({ where: { id } });
+  }
+
+  /// Past overrides are deleted on read: the table only ever holds today and
+  /// future rows, so teachers never maintain a stale exception pile.
+  private purgeExpiredOverrides(clerkId: string) {
+    return this.prisma.teacherAvailabilityOverride.deleteMany({
+      where: { teacherId: clerkId, date: { lt: overrideCutoff() } },
+    });
+  }
+
+  async getMyOverrides(clerkId: string) {
+    await this.purgeExpiredOverrides(clerkId);
+    return this.prisma.teacherAvailabilityOverride.findMany({
+      where: { teacherId: clerkId },
+      orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+    });
+  }
+
+  async addMyOverride(clerkId: string, dto: CreateAvailabilityOverrideDto) {
+    const { date, startTime, endTime } = dto;
+    const timezone = dto.timezone ?? 'Africa/Accra';
+
+    // Zero-padded HH:MM compares lexicographically, so no parsing needed.
+    if (endTime <= startTime) {
+      throw new BadRequestException(
+        'End time must be after start time (overnight overrides are not supported)',
+      );
+    }
+    if (!isCalendarDate(date)) {
+      throw new BadRequestException(
+        'Date must be a real YYYY-MM-DD calendar date',
+      );
+    }
+    const today = localDateStr(new Date(), timezone);
+    if (today === null) {
+      throw new BadRequestException(`Unknown timezone: ${timezone}`);
+    }
+    if (date < today) {
+      throw new BadRequestException('Date must be today or later');
+    }
+
+    await this.purgeExpiredOverrides(clerkId);
+    const existing = await this.prisma.teacherAvailabilityOverride.findMany({
+      where: { teacherId: clerkId, date },
+    });
+    const clash = existing.find(
+      (override) =>
+        override.startTime < endTime && startTime < override.endTime,
+    );
+    if (clash) {
+      throw new ConflictException(
+        `Overlaps with existing ${clash.kind.toLowerCase()} override ${clash.startTime}–${clash.endTime}`,
+      );
+    }
+
+    return this.prisma.teacherAvailabilityOverride.create({
+      data: {
+        teacherId: clerkId,
+        date,
+        startTime,
+        endTime,
+        timezone,
+        kind: dto.kind,
+      },
+    });
+  }
+
+  async removeMyOverride(clerkId: string, id: string) {
+    // Scoped lookup: other teachers' overrides read as missing rather than
+    // leaking their existence.
+    const override = await this.prisma.teacherAvailabilityOverride.findFirst({
+      where: { id, teacherId: clerkId },
+    });
+    if (!override) {
+      throw new NotFoundException(`Availability override ${id} not found`);
+    }
+    return this.prisma.teacherAvailabilityOverride.delete({
+      where: { id },
+    });
   }
 
   async setMySubjects(clerkId: string, subjectIds: string[]) {

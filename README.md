@@ -136,7 +136,8 @@ unstack-learning-backend/
 │   │   ├── teachers.service.ts     # Transactional subject-set replacement + availability windows
 │   │   └── dtos/
 │   │       ├── set-teacher-subjects.dto.ts
-│   │       └── create-availability.dto.ts
+│   │       ├── create-availability.dto.ts
+│   │       └── create-availability-override.dto.ts
 │   ├── help-requests/
 │   │   ├── help-requests.module.ts
 │   │   ├── help-requests.controller.ts # POST/GET /api/v1/requests (queue for teachers)
@@ -147,7 +148,7 @@ unstack-learning-backend/
 │   │   ├── notifications.module.ts
 │   │   ├── notifications.controller.ts # GET/PATCH /api/v1/notifications/me (any role)
 │   │   ├── notifications.service.ts    # Availability-gated fan-out + stale-request escalation (+ push per event)
-│   │   └── availability.ts             # Pure isAvailableNow weekday/time/timezone check
+│   │   └── availability.ts             # Pure isAvailableNow (weekly + dated overrides) + cutoff helpers
 │   ├── push/
 │   │   ├── push.module.ts
 │   │   ├── push.controller.ts # POST/DELETE/GET /api/v1/push/subscriptions + POST /test (any role, self-scoped)

@@ -6,6 +6,7 @@ import {
   ESCALATION_THRESHOLD_MINUTES,
   NotificationsService,
 } from './notifications.service.js';
+import { overrideCutoff } from './availability.js';
 
 const mockPrismaService = {
   notification: {
@@ -26,6 +27,10 @@ const mockPrismaService = {
   },
   teacherAvailability: {
     findMany: jest.fn(),
+  },
+  teacherAvailabilityOverride: {
+    findMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
   helpRequest: {
     findMany: jest.fn(),
@@ -180,7 +185,15 @@ describe('NotificationsService', () => {
       prisma.teacherSubject.findMany.mockResolvedValue(links);
       prisma.user.findMany.mockResolvedValue([]);
       prisma.teacherAvailability.findMany.mockResolvedValue([]);
+      prisma.teacherAvailabilityOverride.findMany.mockResolvedValue([]);
+      prisma.teacherAvailabilityOverride.deleteMany.mockResolvedValue({
+        count: 0,
+      });
       prisma.notification.createMany.mockResolvedValue({ count: 2 });
+      prisma.helpRequest.findUnique.mockResolvedValue({
+        topic: 'Mitosis',
+        subject: { name: 'Biology' },
+      });
     });
 
     it('notifies teachers with no availability windows set', async () => {
@@ -316,6 +329,91 @@ describe('NotificationsService', () => {
 
       expect(result).toEqual({ notified: ['t-1', 't-2'], suppressed: [] });
       expect(prisma.notification.createMany).toHaveBeenCalled();
+    });
+
+    it('suppresses teachers with an UNAVAILABLE override over open hours', async () => {
+      const now = new Date('2026-10-19T12:00:00.000Z');
+      prisma.teacherAvailability.findMany.mockResolvedValue([
+        {
+          teacherId: 't-1',
+          weekday: 1,
+          startTime: '09:00',
+          endTime: '17:00',
+          timezone: 'Africa/Accra',
+        },
+      ]);
+      prisma.teacherAvailabilityOverride.findMany.mockResolvedValue([
+        {
+          teacherId: 't-1',
+          date: '2026-10-19',
+          startTime: '10:00',
+          endTime: '14:00',
+          timezone: 'Africa/Accra',
+          kind: 'UNAVAILABLE',
+        },
+      ]);
+
+      const result = await service.notifyRequestCreated(
+        'r-1',
+        's-1',
+        'learner-1',
+        now,
+      );
+
+      expect(result).toEqual({ notified: ['t-2'], suppressed: ['t-1'] });
+    });
+
+    it('notifies teachers with an AVAILABLE override outside open hours', async () => {
+      const now = new Date('2026-10-19T12:00:00.000Z');
+      prisma.teacherAvailability.findMany.mockResolvedValue([
+        {
+          teacherId: 't-1',
+          weekday: 2,
+          startTime: '09:00',
+          endTime: '17:00',
+          timezone: 'Africa/Accra',
+        },
+      ]);
+      prisma.teacherAvailabilityOverride.findMany.mockResolvedValue([
+        {
+          teacherId: 't-1',
+          date: '2026-10-19',
+          startTime: '10:00',
+          endTime: '14:00',
+          timezone: 'Africa/Accra',
+          kind: 'AVAILABLE',
+        },
+      ]);
+
+      const result = await service.notifyRequestCreated(
+        'r-1',
+        's-1',
+        'learner-1',
+        now,
+      );
+
+      expect(result).toEqual({ notified: ['t-1', 't-2'], suppressed: [] });
+    });
+
+    it('purges expired overrides while fanning out', async () => {
+      const now = new Date('2026-10-19T12:00:00.000Z');
+
+      await service.notifyRequestCreated('r-1', 's-1', 'learner-1', now);
+
+      expect(
+        prisma.teacherAvailabilityOverride.deleteMany,
+      ).toHaveBeenCalledWith({
+        where: {
+          teacherId: { in: ['t-1', 't-2'] },
+          date: { lt: overrideCutoff(now) },
+        },
+      });
+      expect(prisma.teacherAvailabilityOverride.findMany).toHaveBeenCalledWith({
+        where: {
+          teacherId: { in: ['t-1', 't-2'] },
+          date: { gte: overrideCutoff(now) },
+        },
+      });
     });
   });
 
