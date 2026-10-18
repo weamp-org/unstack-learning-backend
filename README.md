@@ -143,6 +143,11 @@ unstack-learning-backend/
 │   │   ├── help-requests.service.ts    # Active-subject + context gates, scoped reads
 │   │   └── dtos/
 │   │       └── create-help-request.dto.ts
+│   ├── notifications/
+│   │   ├── notifications.module.ts
+│   │   ├── notifications.controller.ts # GET/PATCH /api/v1/notifications/me (any role)
+│   │   ├── notifications.service.ts    # Availability-gated fan-out + stale-request escalation
+│   │   └── availability.ts             # Pure isAvailableNow weekday/time/timezone check
 │   └── webhooks/
 │       ├── webhooks.module.ts
 │       ├── webhooks.controller.ts  # POST /api/v1/webhooks/clerk
@@ -151,6 +156,7 @@ unstack-learning-backend/
 │   ├── jest-e2e.json               # E2E Jest config
 │   ├── app.e2e-spec.ts
 │   ├── help-requests.e2e-spec.ts
+│   ├── notifications.e2e-spec.ts
 │   ├── subjects.e2e-spec.ts
 │   ├── teachers.e2e-spec.ts
 │   └── users.e2e-spec.ts

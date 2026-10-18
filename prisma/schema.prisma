@@ -26,6 +26,8 @@ model User {
   helpRequests     HelpRequest[]         @relation("LearnerRequests")
   assignedRequests HelpRequest[]        @relation("AssignedTeacher")
   requestDecisions HelpRequestDecision[]
+  notifications    Notification[]       @relation("NotificationRecipient")
+  triggered        Notification[]       @relation("NotificationActor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -85,6 +87,7 @@ model HelpRequest {
   teacher   User?    @relation("AssignedTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
   decisions HelpRequestDecision[]
   session   HelpSession?
+  notifications Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -146,5 +149,34 @@ model HelpLink {
   request   HelpRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   url       String
 
+  @@index([requestId])
+}
+
+/// An in-app inbox row for one recipient. REQUEST_CREATED fans out to the
+/// eligible subject teachers (+ admins, with the availability rule applied);
+/// REQUEST_ACCEPTED / SESSION_UPDATED go to the learner. Escalation reuses
+/// REQUEST_CREATED so the (recipient, request, type) unique keeps it to one
+/// row per teacher even when the suppressed group is notified late.
+enum NotificationType {
+  REQUEST_CREATED
+  REQUEST_ACCEPTED
+  SESSION_UPDATED
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  recipientId String
+  recipient   User             @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  requestId   String
+  request     HelpRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  readAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([recipientId, requestId, type])
+  @@index([recipientId])
   @@index([requestId])
 }

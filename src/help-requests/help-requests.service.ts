@@ -11,6 +11,7 @@ import {
   HelpRequestStatus,
   UserRole,
 } from '../generated/prisma/enums.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AcceptHelpRequestDto } from './dtos/accept-help-request.dto.js';
 import { CreateHelpRequestDto } from './dtos/create-help-request.dto.js';
@@ -37,7 +38,10 @@ const DETAIL_INCLUDE = {
 
 @Injectable()
 export class HelpRequestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async isAdmin(clerkId: string) {
     const user = await this.prisma.user.findUnique({
@@ -64,16 +68,31 @@ export class HelpRequestsService {
       throw new BadRequestException('Provide details or at least one link');
     }
 
-    return this.prisma.helpRequest.create({
-      data: {
-        learnerId: clerkId,
-        subjectId: dto.subjectId,
-        topic: dto.topic,
-        details,
-        links: { create: links },
-      },
-      include: REQUEST_INCLUDE,
-    });
+    return this.prisma.helpRequest
+      .create({
+        data: {
+          learnerId: clerkId,
+          subjectId: dto.subjectId,
+          topic: dto.topic,
+          details,
+          links: { create: links },
+        },
+        include: REQUEST_INCLUDE,
+      })
+      .then(async (request) => {
+        // Best-effort: the request exists either way, so a fan-out failure
+        // must not turn creation into a 500.
+        try {
+          await this.notificationsService.notifyRequestCreated(
+            request.id,
+            dto.subjectId,
+            clerkId,
+          );
+        } catch {
+          // Notification fan-out is retried via escalation; ignore here.
+        }
+        return request;
+      });
   }
 
   findMine(clerkId: string) {
@@ -115,7 +134,7 @@ export class HelpRequestsService {
     });
     // Oldest first: longest-waiting learners get reviewed first. Only OPEN
     // requests, minus rows the viewer already declined.
-    return this.prisma.helpRequest.findMany({
+    const queue = await this.prisma.helpRequest.findMany({
       where: {
         status: HelpRequestStatus.OPEN,
         ...(user?.role === UserRole.ADMIN
@@ -128,6 +147,15 @@ export class HelpRequestsService {
       include: QUEUE_INCLUDE,
       orderBy: { createdAt: 'asc' },
     });
+    // Opportunistic fallback for the availability filter: any stale OPEN
+    // request re-notifies the teachers suppression skipped. Runs off the
+    // read until a real cron exists; failures must not break the queue.
+    try {
+      await this.notificationsService.escalateStaleRequests();
+    } catch {
+      // Escalation retries on the next queue read; ignore here.
+    }
+    return queue;
   }
 
   private async requireEligibleTeacher(
@@ -160,7 +188,7 @@ export class HelpRequestsService {
 
     // First accepter wins: the status check and writes share a transaction,
     // so a simultaneous second accept sees ACCEPTED and gets a 409.
-    return this.prisma.$transaction(async (tx) => {
+    const accepted = await this.prisma.$transaction(async (tx) => {
       const request = await tx.helpRequest.findUnique({ where: { id } });
       if (!request) throw new NotFoundException(`Request ${id} not found`);
       if (request.status !== HelpRequestStatus.OPEN) {
@@ -201,6 +229,20 @@ export class HelpRequestsService {
         include: DETAIL_INCLUDE,
       });
     });
+    // Best-effort like creation: the accept stands even if the inbox row
+    // fails; the learner still sees ACCEPTED on their request page.
+    try {
+      if (accepted?.learnerId !== undefined) {
+        await this.notificationsService.notifyRequestAccepted(
+          id,
+          accepted.learnerId,
+          clerkId,
+        );
+      }
+    } catch {
+      // The learner sees the accepted state on refresh; ignore here.
+    }
+    return accepted;
   }
 
   async declineRequest(clerkId: string, isAdmin: boolean, id: string) {
@@ -278,9 +320,22 @@ export class HelpRequestsService {
       where: { requestId: id },
       data: { sessionUrl: dto.sessionUrl, scheduledAt },
     });
-    return this.prisma.helpRequest.findUnique({
+    const updated = await this.prisma.helpRequest.findUnique({
       where: { id },
       include: DETAIL_INCLUDE,
     });
+    // Best-effort: the session stands even if the inbox row fails.
+    try {
+      if (updated?.learnerId !== undefined) {
+        await this.notificationsService.notifySessionUpdated(
+          id,
+          updated.learnerId,
+          clerkId,
+        );
+      }
+    } catch {
+      // The learner sees the latest session on refresh; ignore here.
+    }
+    return updated;
   }
 }
