@@ -2,12 +2,12 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsDateString, IsOptional, IsUrl, MaxLength } from 'class-validator';
 
 export class UpdateHelpSessionDto {
-  /** Replacement meeting link.
-   * @example 'https://meet.google.com/abc-defg-hij'
+  /** Replacement meeting link. Any platform works (Zoom, Meet, etc).
+   * @example 'https://zoom.us/j/123456789'
    */
   @ApiProperty({
     required: false,
-    example: 'https://meet.google.com/abc-defg-hij',
+    example: 'https://zoom.us/j/123456789',
   })
   @IsUrl({ require_protocol: true })
   @MaxLength(2048)

@@ -16,7 +16,9 @@ import { RolesGuard } from '../roles/roles.guard.js';
 import { UserClerkId } from '../user-clerk-id/user-clerk-id.decorator.js';
 import { AcceptHelpRequestDto } from './dtos/accept-help-request.dto.js';
 import { CreateHelpRequestDto } from './dtos/create-help-request.dto.js';
+import { UpdateHelpRequestDto } from './dtos/update-help-request.dto.js';
 import { UpdateHelpSessionDto } from './dtos/update-help-session.dto.js';
+import { UpsertFeedbackDto } from './dtos/upsert-feedback.dto.js';
 import { HelpRequestsService } from './help-requests.service.js';
 
 @UseGuards(ClerkAuthGuard, RolesGuard)
@@ -82,6 +84,36 @@ export class HelpRequestsController {
     if (clerkId === null) throw new UnauthorizedException();
     const isAdmin = await this.helpRequestsService.isAdmin(clerkId);
     return this.helpRequestsService.closeRequest(clerkId, isAdmin, id);
+  }
+
+  @Patch(':id')
+  update(
+    @UserClerkId() clerkId: string | null,
+    @Param('id') id: string,
+    @Body() dto: UpdateHelpRequestDto,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.helpRequestsService.updateRequest(clerkId, id, dto);
+  }
+
+  @Post(':id/feedback')
+  giveFeedback(
+    @UserClerkId() clerkId: string | null,
+    @Param('id') id: string,
+    @Body() dto: UpsertFeedbackDto,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.helpRequestsService.upsertFeedback(clerkId, id, dto);
+  }
+
+  @Get(':id/feedback')
+  async getFeedback(
+    @UserClerkId() clerkId: string | null,
+    @Param('id') id: string,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    const isAdmin = await this.helpRequestsService.isAdmin(clerkId);
+    return this.helpRequestsService.getFeedback(clerkId, isAdmin, id);
   }
 
   @Patch(':id/session')

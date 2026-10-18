@@ -20,6 +20,14 @@ const mockPrismaService = {
     findUnique: jest.fn(),
     update: jest.fn(),
   },
+  helpLink: {
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
+  },
+  helpFeedback: {
+    upsert: jest.fn(),
+    findUnique: jest.fn(),
+  },
   helpRequestDecision: {
     upsert: jest.fn(),
   },
@@ -37,6 +45,10 @@ interface TxMock {
     findUnique: jest.Mock;
     update: jest.Mock;
   };
+  helpLink: {
+    deleteMany: jest.Mock;
+    createMany: jest.Mock;
+  };
   teacherSubject: {
     findFirst: jest.Mock;
   };
@@ -52,6 +64,10 @@ const mockTx: TxMock = {
   helpRequest: {
     findUnique: jest.fn(),
     update: jest.fn(),
+  },
+  helpLink: {
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
   },
   teacherSubject: {
     findFirst: jest.fn(),
@@ -127,7 +143,13 @@ describe('HelpRequestsService', () => {
             create: [{ url: 'https://example.com/video' }],
           },
         },
-        include: { subject: true, links: true },
+        include: {
+          subject: true,
+          links: true,
+          teacher: { select: { id: true, name: true } },
+          session: true,
+          feedback: true,
+        },
       });
     });
 
@@ -194,7 +216,13 @@ describe('HelpRequestsService', () => {
       await expect(service.findMine('learner-1')).resolves.toEqual(rows);
       expect(prisma.helpRequest.findMany).toHaveBeenCalledWith({
         where: { learnerId: 'learner-1' },
-        include: { subject: true, links: true },
+        include: {
+          subject: true,
+          links: true,
+          teacher: { select: { id: true, name: true } },
+          session: true,
+          feedback: true,
+        },
         orderBy: { createdAt: 'desc' },
       });
     });
@@ -480,6 +508,7 @@ describe('HelpRequestsService', () => {
           learner: { select: { id: true, name: true } },
           teacher: { select: { id: true, name: true } },
           session: true,
+          feedback: true,
         },
       });
     });
@@ -605,6 +634,143 @@ describe('HelpRequestsService', () => {
         }),
       ).rejects.toThrow('scheduledAt must be in the future');
       expect(prisma.helpSession.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateRequest', () => {
+    const openRow = {
+      id: 'r-1',
+      learnerId: 'learner-1',
+      status: 'OPEN',
+      subjectId: 's-1',
+    };
+
+    it('updates topic and details for the owner', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(openRow);
+      const updated = { ...openRow, topic: 'New topic' };
+      prisma.helpRequest.update.mockResolvedValue(updated);
+      prisma.helpRequest.findUnique.mockResolvedValueOnce(openRow);
+      prisma.helpRequest.findUnique.mockResolvedValue(updated);
+
+      await expect(
+        service.updateRequest('learner-1', 'r-1', {
+          topic: 'New topic',
+          details: 'More context',
+        }),
+      ).resolves.toEqual(updated);
+      expect(prisma.helpRequest.update).toHaveBeenCalledWith({
+        where: { id: 'r-1' },
+        data: { topic: 'New topic', details: 'More context' },
+      });
+    });
+
+    it('replaces links in a transaction', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(openRow);
+      const updated = { ...openRow };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce(
+        (cb: (tx: typeof mockTx) => unknown) => Promise.resolve(cb(mockTx)),
+      );
+      mockTx.helpLink.deleteMany.mockResolvedValue({});
+      mockTx.helpLink.createMany.mockResolvedValue({});
+      mockTx.helpRequest.update.mockResolvedValue(updated);
+      prisma.helpRequest.findUnique.mockResolvedValueOnce(openRow);
+      prisma.helpRequest.findUnique.mockResolvedValue(updated);
+
+      await expect(
+        service.updateRequest('learner-1', 'r-1', {
+          links: [{ url: 'https://example.com/a' }],
+        }),
+      ).resolves.toEqual(updated);
+      expect(mockTx.helpLink.deleteMany).toHaveBeenCalledWith({
+        where: { requestId: 'r-1' },
+      });
+    });
+
+    it('404s for non-owners without leaking existence', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(openRow);
+
+      await expect(
+        service.updateRequest('learner-2', 'r-1', { topic: 'x' }),
+      ).rejects.toThrow('Request r-1 not found');
+    });
+
+    it('409s when the request is no longer open', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue({
+        ...openRow,
+        status: 'ACCEPTED',
+      });
+
+      await expect(
+        service.updateRequest('learner-1', 'r-1', { topic: 'x' }),
+      ).rejects.toThrow('Only open requests can be edited');
+    });
+
+    it('400s when nothing changes', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(openRow);
+
+      await expect(
+        service.updateRequest('learner-1', 'r-1', {}),
+      ).rejects.toThrow('Nothing to update');
+    });
+  });
+
+  describe('feedback', () => {
+    const acceptedRow = {
+      id: 'r-1',
+      learnerId: 'learner-1',
+      teacherId: 'teacher-1',
+      status: 'ACCEPTED',
+      subjectId: 's-1',
+    };
+
+    it('upserts feedback for the owner after accept', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(acceptedRow);
+      const saved = { id: 'f-1', requestId: 'r-1', rating: 5, comment: null };
+      prisma.helpFeedback.upsert.mockResolvedValue(saved);
+
+      await expect(
+        service.upsertFeedback('learner-1', 'r-1', { rating: 5 }),
+      ).resolves.toEqual(saved);
+      expect(prisma.helpFeedback.upsert).toHaveBeenCalledWith({
+        where: { requestId: 'r-1' },
+        update: { rating: 5, comment: null },
+        create: { requestId: 'r-1', rating: 5, comment: null },
+      });
+    });
+
+    it('400s while the request is still open', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue({
+        ...acceptedRow,
+        status: 'OPEN',
+      });
+
+      await expect(
+        service.upsertFeedback('learner-1', 'r-1', { rating: 4 }),
+      ).rejects.toThrow(
+        'You can share feedback after a teacher accepts your request.',
+      );
+    });
+
+    it('404s for non-owners', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(acceptedRow);
+
+      await expect(
+        service.upsertFeedback('learner-2', 'r-1', { rating: 4 }),
+      ).rejects.toThrow('Request r-1 not found');
+    });
+
+    it('returns feedback to the assigned teacher', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue({
+        ...acceptedRow,
+        learner: { id: 'learner-1', name: 'Ama' },
+        teacher: { id: 'teacher-1', name: 'Kofi' },
+      });
+      const saved = { id: 'f-1', requestId: 'r-1', rating: 5 };
+      prisma.helpFeedback.findUnique.mockResolvedValue(saved);
+
+      await expect(
+        service.getFeedback('teacher-1', false, 'r-1'),
+      ).resolves.toEqual(saved);
     });
   });
 });

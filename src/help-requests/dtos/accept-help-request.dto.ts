@@ -2,12 +2,13 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsDateString, IsOptional, IsUrl, MaxLength } from 'class-validator';
 
 export class AcceptHelpRequestDto {
-  /** Meeting link posted by the accepting teacher (created by hand in v1).
-   * @example 'https://meet.google.com/abc-defg-hij'
+  /** Meeting link pasted by the accepting teacher. Any platform works
+   * (Zoom, Meet, etc) — links are manual until further notice.
+   * @example 'https://zoom.us/j/123456789'
    */
   @ApiProperty({
     required: false,
-    example: 'https://meet.google.com/abc-defg-hij',
+    example: 'https://zoom.us/j/123456789',
   })
   @IsUrl({ require_protocol: true })
   @MaxLength(2048)
