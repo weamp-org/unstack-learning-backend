@@ -6,6 +6,7 @@ import { LoggerModule } from 'nestjs-pino';
 
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { AdminStatsModule } from './admin-stats/admin-stats.module.js';
 import { ClerkAuthGuard } from './clerk-auth/clerk-auth.guard.js';
 import { GlobalExceptionFilter } from './filters/global-exception.filter.js';
 import { HelpRequestsModule } from './help-requests/help-requests.module.js';
@@ -49,6 +50,7 @@ import { TeachersModule } from './teachers/teachers.module.js';
       },
     ]),
     PrismaModule,
+    AdminStatsModule,
     HelpRequestsModule,
     NotificationsModule,
     PushModule,
