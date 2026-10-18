@@ -16,6 +16,12 @@ describe('AdminStats (e2e)', () => {
     helpRequest: { count: jest.fn(), findFirst: jest.fn(), groupBy: jest.fn() },
     helpSession: { count: jest.fn() },
     helpRequestDecision: { findMany: jest.fn(), groupBy: jest.fn() },
+    helpFeedback: {
+      count: jest.fn(),
+      aggregate: jest.fn(),
+      groupBy: jest.fn(),
+      findMany: jest.fn(),
+    },
     subject: { findMany: jest.fn() },
   };
 
@@ -51,6 +57,12 @@ describe('AdminStats (e2e)', () => {
     prismaMock.helpRequest.groupBy.mockResolvedValue([]);
     prismaMock.helpRequestDecision.findMany.mockResolvedValue([]);
     prismaMock.helpRequestDecision.groupBy.mockResolvedValue([]);
+    prismaMock.helpFeedback.count.mockResolvedValue(0);
+    prismaMock.helpFeedback.aggregate.mockResolvedValue({
+      _avg: { rating: null },
+    });
+    prismaMock.helpFeedback.groupBy.mockResolvedValue([]);
+    prismaMock.helpFeedback.findMany.mockResolvedValue([]);
     prismaMock.subject.findMany.mockResolvedValue([]);
     prismaMock.user.findMany.mockResolvedValue([]);
   });
@@ -66,6 +78,7 @@ describe('AdminStats (e2e)', () => {
         overview: { total: 0, open: 0 },
         bySubject: [],
         byTeacher: [],
+        feedback: { total: 0, coverage: null, averageRating: null },
       });
       expect(res.body).toHaveProperty('responsiveness');
     } finally {

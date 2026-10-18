@@ -20,6 +20,12 @@ const mockPrismaService = {
     findMany: jest.fn(),
     groupBy: jest.fn(),
   },
+  helpFeedback: {
+    count: jest.fn(),
+    aggregate: jest.fn(),
+    groupBy: jest.fn(),
+    findMany: jest.fn(),
+  },
   subject: {
     findMany: jest.fn(),
   },
@@ -73,6 +79,10 @@ describe('AdminStatsService', () => {
     prisma.helpRequest.groupBy.mockResolvedValue([]);
     prisma.helpRequestDecision.findMany.mockResolvedValue([]);
     prisma.helpRequestDecision.groupBy.mockResolvedValue([]);
+    prisma.helpFeedback.count.mockResolvedValue(0);
+    prisma.helpFeedback.aggregate.mockResolvedValue({ _avg: { rating: null } });
+    prisma.helpFeedback.groupBy.mockResolvedValue([]);
+    prisma.helpFeedback.findMany.mockResolvedValue([]);
     prisma.subject.findMany.mockResolvedValue([]);
     prisma.user.findMany.mockResolvedValue([]);
 
@@ -96,6 +106,19 @@ describe('AdminStatsService', () => {
       },
       bySubject: [],
       byTeacher: [],
+      feedback: {
+        total: 0,
+        coverage: null,
+        averageRating: null,
+        distribution: [
+          { rating: 1, count: 0 },
+          { rating: 2, count: 0 },
+          { rating: 3, count: 0 },
+          { rating: 4, count: 0 },
+          { rating: 5, count: 0 },
+        ],
+        recentComments: [],
+      },
     });
   });
 
@@ -131,6 +154,23 @@ describe('AdminStatsService', () => {
     prisma.helpRequestDecision.groupBy.mockResolvedValue([
       { teacherId: 't-1', _count: { _all: 1 } },
     ]);
+    prisma.helpFeedback.count.mockResolvedValue(1);
+    prisma.helpFeedback.aggregate.mockResolvedValue({ _avg: { rating: 5 } });
+    prisma.helpFeedback.groupBy.mockResolvedValue([
+      { rating: 5, _count: { _all: 1 } },
+    ]);
+    prisma.helpFeedback.findMany.mockResolvedValue([
+      {
+        rating: 5,
+        comment: 'Clicked finally.',
+        createdAt: new Date('2026-10-18T11:00:00.000Z'),
+        request: {
+          id: 'r-1',
+          topic: 'Fractions',
+          subject: { name: 'Maths' },
+        },
+      },
+    ]);
     prisma.subject.findMany.mockResolvedValue([{ id: 's-1', name: 'Maths' }]);
     prisma.user.findMany.mockResolvedValue([{ id: 't-1', name: 'Ama' }]);
 
@@ -158,6 +198,26 @@ describe('AdminStatsService', () => {
         accepts: 2,
         declines: 1,
         medianSecondsToAccept: 1200,
+      },
+    ]);
+    expect(stats.feedback.total).toBe(1);
+    expect(stats.feedback.coverage).toBe(0.5);
+    expect(stats.feedback.averageRating).toBe(5);
+    expect(stats.feedback.distribution).toEqual([
+      { rating: 1, count: 0 },
+      { rating: 2, count: 0 },
+      { rating: 3, count: 0 },
+      { rating: 4, count: 0 },
+      { rating: 5, count: 1 },
+    ]);
+    expect(stats.feedback.recentComments).toEqual([
+      {
+        requestId: 'r-1',
+        topic: 'Fractions',
+        subjectName: 'Maths',
+        rating: 5,
+        comment: 'Clicked finally.',
+        createdAt: new Date('2026-10-18T11:00:00.000Z'),
       },
     ]);
   });
