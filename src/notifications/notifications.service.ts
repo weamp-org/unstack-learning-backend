@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { NotificationType } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PushPayload, PushService } from '../push/push.service.js';
 import { isAvailableNow } from './availability.js';
 
 /// A stale OPEN request re-notifies the teachers who were suppressed by the
@@ -23,7 +24,28 @@ const MINE_INCLUDE = {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pushService: PushService,
+  ) {}
+
+  /// Best-effort push: the inbox row is the durable signal, so a push
+  /// failure (including unconfigured VAPID) must never break the caller.
+  private async pushToUsers(
+    userIds: string[],
+    payload: PushPayload,
+  ): Promise<void> {
+    if (userIds.length === 0) return;
+    await Promise.all(
+      userIds.map(async (userId) => {
+        try {
+          await this.pushService.sendToUser(userId, payload);
+        } catch {
+          // Push is enhancement; the inbox row already exists.
+        }
+      }),
+    );
+  }
 
   listMine(recipientId: string, unreadOnly = false) {
     return this.prisma.notification.findMany({
@@ -120,19 +142,28 @@ export class NotificationsService {
         })),
         skipDuplicates: true,
       });
+      const context = await this.prisma.helpRequest.findUnique({
+        where: { id: requestId },
+        select: { topic: true, subject: { select: { name: true } } },
+      });
+      await this.pushToUsers(notified, {
+        title: `New request in ${context?.subject.name ?? 'a subject'}`,
+        body: context?.topic ?? 'A learner needs help.',
+        url: `/requests/${requestId}`,
+      });
     }
     return { notified, suppressed };
   }
 
-  private notifyLearner(
+  private async notifyLearner(
     type: 'REQUEST_ACCEPTED' | 'SESSION_UPDATED',
     requestId: string,
     learnerId: string,
     actorId: string,
   ) {
     // No self-notify: an admin accepting their own request needs no inbox row.
-    if (learnerId === actorId) return Promise.resolve(null);
-    return this.prisma.notification.upsert({
+    if (learnerId === actorId) return null;
+    const row = await this.prisma.notification.upsert({
       where: {
         recipientId_requestId_type: {
           recipientId: learnerId,
@@ -143,6 +174,31 @@ export class NotificationsService {
       update: {},
       create: { recipientId: learnerId, type, requestId, actorId },
     });
+    const [request, actor] = await Promise.all([
+      this.prisma.helpRequest.findUnique({
+        where: { id: requestId },
+        select: { topic: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: actorId },
+        select: { name: true },
+      }),
+    ]);
+    const topic = request?.topic ?? 'your request';
+    if (type === NotificationType.REQUEST_ACCEPTED) {
+      await this.pushToUsers([learnerId], {
+        title: 'Your request was accepted',
+        body: `${actor?.name ?? 'A teacher'} will help with "${topic}".`,
+        url: `/requests/${requestId}`,
+      });
+    } else {
+      await this.pushToUsers([learnerId], {
+        title: 'Session details updated',
+        body: `New time or link for "${topic}".`,
+        url: `/requests/${requestId}`,
+      });
+    }
+    return row;
   }
 
   notifyRequestAccepted(requestId: string, learnerId: string, actorId: string) {
@@ -173,7 +229,13 @@ export class NotificationsService {
     const cutoff = new Date(now.getTime() - thresholdMinutes * 60_000);
     const stale = await this.prisma.helpRequest.findMany({
       where: { status: 'OPEN', createdAt: { lt: cutoff } },
-      select: { id: true, subjectId: true, learnerId: true },
+      select: {
+        id: true,
+        subjectId: true,
+        learnerId: true,
+        topic: true,
+        subject: { select: { name: true } },
+      },
     });
     if (stale.length === 0) return { escalated: 0 };
 
@@ -214,6 +276,7 @@ export class NotificationsService {
       requestId: string;
       actorId: string;
     }[] = [];
+    const pushByRequest = new Map<string, string[]>();
     for (const request of stale) {
       const candidates = [
         ...new Set([
@@ -231,6 +294,9 @@ export class NotificationsService {
             // the row still names who needs help.
             actorId: request.learnerId,
           });
+          const recipients = pushByRequest.get(request.id) ?? [];
+          recipients.push(recipientId);
+          pushByRequest.set(request.id, recipients);
         }
       }
     }
@@ -239,6 +305,18 @@ export class NotificationsService {
         data,
         skipDuplicates: true,
       });
+      await Promise.all(
+        stale.map(async (request) => {
+          const recipients = pushByRequest.get(request.id) ?? [];
+          if (recipients.length > 0) {
+            await this.pushToUsers(recipients, {
+              title: `New request in ${request.subject.name}`,
+              body: request.topic,
+              url: `/requests/${request.id}`,
+            });
+          }
+        }),
+      );
     }
     return { escalated: data.length };
   }

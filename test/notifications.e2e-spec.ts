@@ -7,6 +7,7 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { ClerkAuthGuard } from './../src/clerk-auth/clerk-auth.guard';
 import { PrismaService } from './../src/prisma/prisma.service';
+import { PushService } from './../src/push/push.service';
 
 describe('Notifications (e2e)', () => {
   const row = {
@@ -41,12 +42,21 @@ describe('Notifications (e2e)', () => {
     },
   };
 
+  // Push delivery is covered in push.e2e-spec with a mocked web-push; here
+  // the service is stubbed so escalations never attempt a real send.
+  const pushMock = {
+    sendToUser: jest.fn(),
+    sendTest: jest.fn(),
+  };
+
   async function bootApp(
     options: { deny?: boolean; authUserId?: string } = {},
   ): Promise<INestApplication<App>> {
     const moduleBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
-      .useValue(prismaMock);
+      .useValue(prismaMock)
+      .overrideProvider(PushService)
+      .useValue(pushMock);
     if (options.deny) {
       // Stand-in for the real ClerkAuthGuard: proves the route is
       // guard-wired without Clerk keys.

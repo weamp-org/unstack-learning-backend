@@ -146,7 +146,7 @@ unstack-learning-backend/
 │   ├── notifications/
 │   │   ├── notifications.module.ts
 │   │   ├── notifications.controller.ts # GET/PATCH /api/v1/notifications/me (any role)
-│   │   ├── notifications.service.ts    # Availability-gated fan-out + stale-request escalation
+│   │   ├── notifications.service.ts    # Availability-gated fan-out + stale-request escalation (+ push per event)
 │   │   └── availability.ts             # Pure isAvailableNow weekday/time/timezone check
 │   ├── push/
 │   │   ├── push.module.ts
