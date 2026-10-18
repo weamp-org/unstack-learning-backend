@@ -382,11 +382,24 @@ export class HelpRequestsService {
     }
 
     const comment = dto.comment?.trim() ? dto.comment.trim() : null;
-    return this.prisma.helpFeedback.upsert({
+    const saved = await this.prisma.helpFeedback.upsert({
       where: { requestId: id },
       update: { rating: dto.rating, comment },
       create: { requestId: id, rating: dto.rating, comment },
     });
+    // Best-effort: feedback stands even if the teacher ping fails.
+    try {
+      if (request.teacherId) {
+        await this.notificationsService.notifyFeedbackCreated(
+          id,
+          request.teacherId,
+          clerkId,
+        );
+      }
+    } catch {
+      // The teacher sees feedback on the request page; ignore here.
+    }
+    return saved;
   }
 
   async getFeedback(clerkId: string, isAdmin: boolean, id: string) {

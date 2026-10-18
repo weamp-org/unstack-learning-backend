@@ -270,6 +270,50 @@ export class NotificationsService {
     );
   }
 
+  /// Pings the assigned teacher when the learner shares session feedback.
+  /// One row per (teacher, request) — edits re-push but keep the same row.
+  async notifyFeedbackCreated(
+    requestId: string,
+    teacherId: string,
+    actorId: string,
+  ) {
+    if (teacherId === actorId) return null;
+    const row = await this.prisma.notification.upsert({
+      where: {
+        recipientId_requestId_type: {
+          recipientId: teacherId,
+          requestId,
+          type: NotificationType.FEEDBACK_CREATED,
+        },
+      },
+      update: {},
+      create: {
+        recipientId: teacherId,
+        type: NotificationType.FEEDBACK_CREATED,
+        requestId,
+        actorId,
+      },
+    });
+    const [request, actor] = await Promise.all([
+      this.prisma.helpRequest.findUnique({
+        where: { id: requestId },
+        select: { topic: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: actorId },
+        select: { name: true },
+      }),
+    ]);
+    await this.pushToUsers([teacherId], {
+      title: 'New feedback on your session',
+      body: `${actor?.name ?? 'A learner'} rated "${request?.topic ?? 'your session'}".`,
+      url: `/requests/${requestId}`,
+      tag: `request-${requestId}-feedback`,
+      vibrate: [100],
+    });
+    return row;
+  }
+
   /// Notifies every eligible teacher/admin who still lacks a REQUEST_CREATED
   /// row for each stale OPEN request, regardless of availability. One row per
   /// (recipient, request, type) keeps re-runs idempotent.
