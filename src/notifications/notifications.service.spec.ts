@@ -189,6 +189,7 @@ describe('NotificationsService', () => {
       prisma.teacherAvailabilityOverride.deleteMany.mockResolvedValue({
         count: 0,
       });
+      prisma.helpRequest.findMany.mockResolvedValue([]);
       prisma.notification.createMany.mockResolvedValue({ count: 2 });
       prisma.helpRequest.findUnique.mockResolvedValue({
         topic: 'Mitosis',
@@ -413,6 +414,44 @@ describe('NotificationsService', () => {
           teacherId: { in: ['t-1', 't-2'] },
           date: { gte: overrideCutoff(now) },
         },
+      });
+    });
+
+    it('skips teachers holding an open assignment', async () => {
+      prisma.helpRequest.findMany.mockResolvedValue([{ teacherId: 't-1' }]);
+
+      const result = await service.notifyRequestCreated(
+        'r-1',
+        's-1',
+        'learner-1',
+      );
+
+      expect(result).toEqual({ notified: ['t-2'], suppressed: [] });
+      expect(prisma.helpRequest.findMany).toHaveBeenCalledWith({
+        where: {
+          teacherId: { in: ['t-1', 't-2'] },
+          status: { not: 'CLOSED' },
+        },
+        select: { teacherId: true },
+      });
+      expect(prisma.notification.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            recipientId: 't-2',
+            type: 'REQUEST_CREATED',
+            requestId: 'r-1',
+            actorId: 'learner-1',
+          },
+        ],
+        skipDuplicates: true,
+      });
+      expect(mockPushService.sendToUser).toHaveBeenCalledTimes(1);
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith('t-2', {
+        title: 'New request in Biology',
+        body: 'Mitosis',
+        url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [150, 75, 150],
       });
     });
   });

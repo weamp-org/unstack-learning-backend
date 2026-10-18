@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { NotificationType } from '../generated/prisma/enums.js';
+import {
+  HelpRequestStatus,
+  NotificationType,
+} from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PushPayload, PushService } from '../push/push.service.js';
 import { isAvailableNow, overrideCutoff } from './availability.js';
@@ -111,9 +114,26 @@ export class NotificationsService {
     ].filter((id) => id !== actorId);
     if (recipientIds.length === 0) return { notified: [], suppressed: [] };
 
-    const windows = await this.prisma.teacherAvailability.findMany({
-      where: { teacherId: { in: recipientIds } },
-    });
+    const [windows, assigned] = await Promise.all([
+      this.prisma.teacherAvailability.findMany({
+        where: { teacherId: { in: recipientIds } },
+      }),
+      // Busy = holding a request that isn't closed yet. Busy teachers sit
+      // out this round entirely (neither notified nor suppressed); the
+      // escalation fallback still reaches them if nobody else picks it up.
+      this.prisma.helpRequest.findMany({
+        where: {
+          teacherId: { in: recipientIds },
+          status: { not: HelpRequestStatus.CLOSED },
+        },
+        select: { teacherId: true },
+      }),
+    ]);
+    const busyIds = new Set(
+      assigned
+        .map((request) => request.teacherId)
+        .filter((id): id is string => id !== null),
+    );
     const cutoff = overrideCutoff(now);
     // Expired overrides are purged on read; only today + future rows can
     // still match, so only those are loaded.
@@ -139,6 +159,7 @@ export class NotificationsService {
     const notified: string[] = [];
     const suppressed: string[] = [];
     for (const id of recipientIds) {
+      if (busyIds.has(id)) continue;
       const teacherWindows = byTeacher.get(id) ?? [];
       const teacherOverrides = overridesByTeacher.get(id) ?? [];
       if (
