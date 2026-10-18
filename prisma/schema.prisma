@@ -112,6 +112,7 @@ model HelpRequest {
   teacher   User?    @relation("AssignedTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
   decisions HelpRequestDecision[]
   session   HelpSession?
+  feedback  HelpFeedback?
   notifications Notification[]
 
   createdAt DateTime @default(now())
@@ -149,8 +150,9 @@ enum HelpDecision {
   DECLINED
 }
 
-/// The arranged help session. Links are pasted by hand in v1 (source
-/// MANUAL); API-created links drop in later without remodeling.
+/// The arranged help session. Links are pasted by hand by the teacher —
+/// any meeting platform works (Zoom, Meet, etc). Manual links are the
+/// approach until further notice.
 model HelpSession {
   id          String            @id @default(cuid())
   requestId   String            @unique
@@ -175,6 +177,20 @@ model HelpLink {
   url       String
 
   @@index([requestId])
+}
+
+/// Optional learner feedback after the session. One row per request,
+/// created by the learner once ACCEPTED; visible to the learner, the
+/// assigned teacher, and admins.
+model HelpFeedback {
+  id        String      @id @default(cuid())
+  requestId String      @unique
+  request   HelpRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// One browser/device push endpoint for a user. A user can have many (phone

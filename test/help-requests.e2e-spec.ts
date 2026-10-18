@@ -27,6 +27,10 @@ describe('HelpRequests (e2e)', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    helpLink: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
     teacherSubject: {
       findFirst: jest.fn(),
     },
@@ -53,6 +57,14 @@ describe('HelpRequests (e2e)', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+    },
+    helpLink: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    helpFeedback: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
     },
     helpSession: {
       create: jest.fn(),
@@ -394,6 +406,110 @@ describe('HelpRequests (e2e)', () => {
 
       await request(app.getHttpServer())
         .patch('/api/v1/requests/r-1/close')
+        .expect(200);
+    });
+  });
+
+  describe('editing', () => {
+    let app: INestApplication<App>;
+
+    beforeEach(async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ role: 'STUDENT' });
+      app = await bootApp({ authUserId: 'learner-1' });
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('PATCH /api/v1/requests/:id updates an open request', async () => {
+      const openRow = { ...row, status: 'OPEN' };
+      prismaMock.helpRequest.findUnique.mockResolvedValueOnce(openRow);
+      prismaMock.helpRequest.findUnique.mockResolvedValue({
+        ...openRow,
+        topic: 'New topic',
+      });
+      prismaMock.helpRequest.update.mockResolvedValue({
+        ...openRow,
+        topic: 'New topic',
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1')
+        .send({ topic: 'New topic' })
+        .expect(200);
+    });
+
+    it('PATCH rejects edits once accepted', async () => {
+      prismaMock.helpRequest.findUnique.mockResolvedValue({
+        ...row,
+        status: 'ACCEPTED',
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/requests/r-1')
+        .send({ topic: 'Late change' })
+        .expect(409);
+    });
+  });
+
+  describe('feedback', () => {
+    let app: INestApplication<App>;
+
+    beforeEach(async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ role: 'STUDENT' });
+      app = await bootApp({ authUserId: 'learner-1' });
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('POST /api/v1/requests/:id/feedback saves a rating', async () => {
+      prismaMock.helpRequest.findUnique.mockResolvedValue({
+        ...row,
+        status: 'ACCEPTED',
+      });
+      prismaMock.helpFeedback.upsert.mockResolvedValue({
+        id: 'f-1',
+        requestId: 'r-1',
+        rating: 5,
+        comment: null,
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/requests/r-1/feedback')
+        .send({ rating: 5 })
+        .expect(201);
+    });
+
+    it('POST rejects feedback while still open', async () => {
+      prismaMock.helpRequest.findUnique.mockResolvedValue({
+        ...row,
+        status: 'OPEN',
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/requests/r-1/feedback')
+        .send({ rating: 4 })
+        .expect(400);
+    });
+
+    it('GET /api/v1/requests/:id/feedback returns the row', async () => {
+      prismaMock.helpRequest.findUnique.mockResolvedValue({
+        ...row,
+        learnerId: 'learner-1',
+        teacherId: null,
+        status: 'CLOSED',
+      });
+      prismaMock.helpFeedback.findUnique.mockResolvedValue({
+        id: 'f-1',
+        requestId: 'r-1',
+        rating: 5,
+      });
+
+      await request(app.getHttpServer())
+        .get('/api/v1/requests/r-1/feedback')
         .expect(200);
     });
   });

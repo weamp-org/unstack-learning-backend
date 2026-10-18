@@ -140,10 +140,14 @@ unstack-learning-backend/
 │   │       └── create-availability-override.dto.ts
 │   ├── help-requests/
 │   │   ├── help-requests.module.ts
-│   │   ├── help-requests.controller.ts # POST/GET /api/v1/requests (queue for teachers)
-│   │   ├── help-requests.service.ts    # Active-subject + context gates, scoped reads
+│   │   ├── help-requests.controller.ts # POST/GET/PATCH /api/v1/requests (queue, edit, accept/decline/close/session/feedback)
+│   │   ├── help-requests.service.ts    # Active-subject + context gates, scoped reads, first-wins accept, owner edit, learner feedback
 │   │   └── dtos/
-│   │       └── create-help-request.dto.ts
+│   │       ├── create-help-request.dto.ts
+│   │       ├── update-help-request.dto.ts  # Owner edit of OPEN requests (topic/details/links)
+│   │       ├── accept-help-request.dto.ts  # Manual meeting link (any platform) + future time
+│   │       ├── update-help-session.dto.ts
+│   │       └── upsert-feedback.dto.ts      # Rating 1-5 + optional comment
 │   ├── notifications/
 │   │   ├── notifications.module.ts
 │   │   ├── notifications.controller.ts # GET/PATCH /api/v1/notifications/me (any role)
@@ -216,11 +220,47 @@ The template uses two env files loaded in order: `.env.local` (local overrides, 
 
 All endpoints are prefixed with `/api/v1`.
 
-| Method  | Path              | Auth                                       | Description                                          |
-| ------- | ----------------- | ------------------------------------------ | ---------------------------------------------------- |
-| `GET`   | `/`               | Public                                     | Health check (`{ status }`)                          |
-| `PATCH` | `/users/:id/role` | Admin only                                 | Assign a user role (`STUDENT` / `TEACHER` / `ADMIN`) |
-| `POST`  | `/webhooks/clerk` | Public (signature-verified, skip throttle) | Clerk webhook events                                 |
+| Method   | Path                             | Auth                                            | Description                                                                                 |
+| -------- | -------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `GET`    | `/`                              | Public                                          | Health check (`{ status }`)                                                                 |
+| `POST`   | `/requests`                      | Any signed-in user                              | Learner creates a help request (subject must be active)                                     |
+| `GET`    | `/requests/me`                   | Any signed-in user                              | List my requests (newest first, with teacher/session/feedback)                              |
+| `GET`    | `/requests/queue`                | Teacher, Admin                                  | Open requests in my subjects, oldest first (stale escalation runs here until a cron exists) |
+| `GET`    | `/requests/:id`                  | Owner, assigned teacher, subject teacher, Admin | Scoped read (404 to hide existence)                                                         |
+| `PATCH`  | `/requests/:id`                  | Owner, `OPEN` only                              | Edit topic/details/links (links replace all; subject frozen)                                |
+| `PATCH`  | `/requests/:id/accept`           | Teacher of subject, Admin                       | First-accept wins (`409` once taken); optional manual meeting link + future time            |
+| `PATCH`  | `/requests/:id/decline`          | Teacher of subject, Admin                       | Per-teacher decline; request stays `OPEN` for others                                        |
+| `PATCH`  | `/requests/:id/close`            | Owner, assigned teacher, Admin                  | Terminal close (idempotent, no reopen — new help = new request)                             |
+| `PATCH`  | `/requests/:id/session`          | Assigned teacher, Admin                         | Update manual meeting link / future time (any platform: Zoom, Meet, etc)                    |
+| `POST`   | `/requests/:id/feedback`         | Owner, once `ACCEPTED`/`CLOSED`                 | Upsert rating `1-5` + optional comment (share after your session)                           |
+| `GET`    | `/requests/:id/feedback`         | Owner, assigned teacher, Admin                  | Read the learner's feedback                                                                 |
+| `POST`   | `/subjects`                      | Admin only                                      | Create a subject (slug server-generated)                                                    |
+| `GET`    | `/subjects`                      | Public (`?includeInactive` admin-only)          | List subjects                                                                               |
+| `GET`    | `/subjects/:id`                  | Public                                          | Read one subject                                                                            |
+| `PATCH`  | `/subjects/:id`                  | Admin only                                      | Rename / describe / activate                                                                |
+| `DELETE` | `/subjects/:id`                  | Admin only                                      | Refused once referenced (deactivate instead)                                                |
+| `GET`    | `/teachers/me/subjects`          | Teacher, Admin                                  | My teachable subjects                                                                       |
+| `PUT`    | `/teachers/me/subjects`          | Teacher, Admin                                  | Replace teachable subjects                                                                  |
+| `GET`    | `/teachers/me/availability`      | Teacher, Admin                                  | Weekly windows                                                                              |
+| `POST`   | `/teachers/me/availability`      | Teacher, Admin                                  | Add a window (no overlap / overnight)                                                       |
+| `DELETE` | `/teachers/me/availability/:id`  | Teacher, Admin                                  | Remove a window                                                                             |
+| `GET`    | `/teachers/me/overrides`         | Teacher, Admin                                  | One-off exceptions (today + future)                                                         |
+| `POST`   | `/teachers/me/overrides`         | Teacher, Admin                                  | Add an exception                                                                            |
+| `DELETE` | `/teachers/me/overrides/:id`     | Teacher, Admin                                  | Remove an exception                                                                         |
+| `GET`    | `/users/me`                      | Any signed-in user                              | My profile + role                                                                           |
+| `GET`    | `/users`                         | Admin only                                      | Roster (newest first, `take: 50`, `?q=&role=`)                                              |
+| `PATCH`  | `/users/:id/role`                | Admin only                                      | Assign a user role (`STUDENT` / `TEACHER` / `ADMIN`)                                        |
+| `GET`    | `/notifications/me`              | Any signed-in user                              | My inbox (`?unreadOnly`)                                                                    |
+| `GET`    | `/notifications/me/unread-count` | Any signed-in user                              | Unread total                                                                                |
+| `PATCH`  | `/notifications/me/read-all`     | Any signed-in user                              | Mark all read                                                                               |
+| `PATCH`  | `/notifications/:id/read`        | Owner only                                      | Mark one read                                                                               |
+| `POST`   | `/notifications/escalate`        | Admin only                                      | Manually re-notify stale `OPEN` requests (>45 min)                                          |
+| `POST`   | `/push/subscriptions`            | Any signed-in user                              | Subscribe this device                                                                       |
+| `DELETE` | `/push/subscriptions`            | Any signed-in user                              | Unsubscribe                                                                                 |
+| `GET`    | `/push/subscriptions/me`         | Any signed-in user                              | My subscriptions                                                                            |
+| `POST`   | `/push/test`                     | Any signed-in user                              | Send a test push (503 without VAPID keys)                                                   |
+| `GET`    | `/admin/stats`                   | Admin only                                      | Global counts                                                                               |
+| `POST`   | `/webhooks/clerk`                | Public (signature-verified, skip throttle)      | Clerk webhook events                                                                        |
 
 Local `User` records are created and synced automatically by `ClerkAuthGuard`
 (on first authenticated request, default role `STUDENT`) and the Clerk webhook

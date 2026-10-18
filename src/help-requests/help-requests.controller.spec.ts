@@ -15,6 +15,9 @@ const mockHelpRequestsService = {
   acceptRequest: jest.fn(),
   declineRequest: jest.fn(),
   closeRequest: jest.fn(),
+  updateRequest: jest.fn(),
+  upsertFeedback: jest.fn(),
+  getFeedback: jest.fn(),
   updateSession: jest.fn(),
 };
 
@@ -188,5 +191,49 @@ describe('HelpRequestsController', () => {
       UnauthorizedException,
     );
     expect(service.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('update delegates with the caller id and DTO', async () => {
+    const dto = { topic: 'New topic' };
+    const updated = { id: 'r-1', ...dto };
+    service.updateRequest.mockResolvedValue(updated);
+
+    await expect(controller.update('learner-1', 'r-1', dto)).resolves.toEqual(
+      updated,
+    );
+    expect(service.updateRequest).toHaveBeenCalledWith('learner-1', 'r-1', dto);
+  });
+
+  it('update throws without a caller id', () => {
+    expect(() => controller.update(null, 'r-1', { topic: 'x' })).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.updateRequest).not.toHaveBeenCalled();
+  });
+
+  it('giveFeedback delegates with the caller id and DTO', async () => {
+    const dto = { rating: 5 };
+    const saved = { id: 'f-1', ...dto };
+    service.upsertFeedback.mockResolvedValue(saved);
+
+    await expect(
+      controller.giveFeedback('learner-1', 'r-1', dto),
+    ).resolves.toEqual(saved);
+    expect(service.upsertFeedback).toHaveBeenCalledWith(
+      'learner-1',
+      'r-1',
+      dto,
+    );
+  });
+
+  it('getFeedback resolves admin and delegates', async () => {
+    const saved = { id: 'f-1', rating: 5 };
+    service.isAdmin.mockResolvedValue(false);
+    service.getFeedback.mockResolvedValue(saved);
+
+    await expect(controller.getFeedback('teacher-1', 'r-1')).resolves.toEqual(
+      saved,
+    );
+    expect(service.getFeedback).toHaveBeenCalledWith('teacher-1', false, 'r-1');
   });
 });
