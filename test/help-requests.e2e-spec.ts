@@ -124,12 +124,25 @@ describe('HelpRequests (e2e)', () => {
         .expect(row);
     });
 
-    it('POST rejects context-free requests', async () => {
+    it('POST rejects requests without details', async () => {
       prismaMock.subject.findUnique.mockResolvedValue(subject);
 
       await request(app.getHttpServer())
         .post('/api/v1/requests')
         .send({ subjectId: 's-1', topic: 'Help me' })
+        .expect(400);
+    });
+
+    it('POST rejects links-only requests', async () => {
+      prismaMock.subject.findUnique.mockResolvedValue(subject);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/requests')
+        .send({
+          subjectId: 's-1',
+          topic: 'Help me',
+          links: [{ url: 'https://example.com/video' }],
+        })
         .expect(400);
     });
 

@@ -59,9 +59,12 @@ export class HelpRequestsService {
 
     const details = dto.details?.trim() ? dto.details.trim() : undefined;
     const links = dto.links ?? [];
-    // A request with no context teaches the queue nothing.
-    if (!details && links.length === 0) {
-      throw new BadRequestException('Provide details or at least one link');
+    // Details carry the request: a teacher needs the learner's own words,
+    // not just a bare link, to know where to start helping.
+    if (!details) {
+      throw new BadRequestException(
+        "Tell us a bit more about what you're stuck on.",
+      );
     }
 
     return this.prisma.helpRequest.create({

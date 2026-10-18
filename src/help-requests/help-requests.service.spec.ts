@@ -140,7 +140,7 @@ describe('HelpRequestsService', () => {
       expect(prisma.helpRequest.create).not.toHaveBeenCalled();
     });
 
-    it('rejects requests with no context', async () => {
+    it('rejects blank details', async () => {
       prisma.subject.findUnique.mockResolvedValue({
         id: 's-1',
         isActive: true,
@@ -152,7 +152,24 @@ describe('HelpRequestsService', () => {
           topic: 'Help me',
           details: '   ',
         }),
-      ).rejects.toThrow('Provide details or at least one link');
+      ).rejects.toThrow("Tell us a bit more about what you're stuck on.");
+      expect(prisma.helpRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects links-only requests without details', async () => {
+      prisma.subject.findUnique.mockResolvedValue({
+        id: 's-1',
+        isActive: true,
+      });
+
+      await expect(
+        service.create('learner-1', {
+          subjectId: 's-1',
+          topic: 'Help me',
+          details: '  ',
+          links: [{ url: 'https://example.com/video' }],
+        }),
+      ).rejects.toThrow("Tell us a bit more about what you're stuck on.");
       expect(prisma.helpRequest.create).not.toHaveBeenCalled();
     });
   });

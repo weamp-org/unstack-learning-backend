@@ -39,18 +39,17 @@ export class CreateHelpRequestDto {
   @MaxLength(120)
   topic: string;
 
-  /** Free-form context (Markdown supported). At least one of details or
-   * links is required.
+  /** Free-form context (Markdown supported). Required: a teacher needs
+   * the learner's own words to know where to start.
    * @example 'I can do u-substitution but LIATE ordering confuses me…'
    */
   @ApiProperty({
-    required: false,
     example: 'I can do u-substitution but LIATE ordering confuses me…',
   })
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
   @MaxLength(5000)
-  details?: string;
+  details: string;
 
   /** Context links (max 3).
    */
