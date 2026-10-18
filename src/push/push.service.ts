@@ -14,6 +14,18 @@ export interface PushPayload {
   body: string;
   icon?: string;
   url?: string;
+  /// Vibration pattern in ms (Android/distinctive buzz per event type).
+  vibrate?: number[];
+  /// Notifications sharing a tag replace each other instead of stacking.
+  tag?: string;
+  /// Re-alert (sound/vibration) when replacing a tagged notification.
+  renotify?: boolean;
+  /// Stay on screen until dismissed (for can't-miss updates).
+  requireInteraction?: boolean;
+  /// Deliver silently (badge/inbox only, no sound or vibration).
+  silent?: boolean;
+  /// Large image shown on supported platforms (Android).
+  image?: string;
 }
 
 @Injectable()

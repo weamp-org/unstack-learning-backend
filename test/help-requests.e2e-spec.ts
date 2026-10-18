@@ -8,6 +8,7 @@ import { AppModule } from './../src/app.module';
 import { ClerkAuthGuard } from './../src/clerk-auth/clerk-auth.guard';
 import { NotificationsService } from './../src/notifications/notifications.service';
 import { PrismaService } from './../src/prisma/prisma.service';
+import { PushService } from './../src/push/push.service';
 
 describe('HelpRequests (e2e)', () => {
   const subject = { id: 's-1', name: 'Biology', isActive: true };
@@ -72,6 +73,13 @@ describe('HelpRequests (e2e)', () => {
     escalateStaleRequests: jest.fn(),
   };
 
+  // Push delivery is covered in push.e2e-spec with a mocked web-push; other
+  // suites stub the service so no real push is attempted.
+  const pushMock = {
+    sendToUser: jest.fn(),
+    sendTest: jest.fn(),
+  };
+
   async function bootApp(
     options: { deny?: boolean; authUserId?: string } = {},
   ): Promise<INestApplication<App>> {
@@ -79,7 +87,9 @@ describe('HelpRequests (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaMock)
       .overrideProvider(NotificationsService)
-      .useValue(notificationsMock);
+      .useValue(notificationsMock)
+      .overrideProvider(PushService)
+      .useValue(pushMock);
     if (options.deny) {
       // Stand-in for the real ClerkAuthGuard (see test/subjects.e2e-spec.ts):
       // proves the route is guard-wired without Clerk keys.

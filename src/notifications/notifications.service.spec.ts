@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { PushService } from '../push/push.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   ESCALATION_THRESHOLD_MINUTES,
@@ -21,13 +22,19 @@ const mockPrismaService = {
   },
   user: {
     findMany: jest.fn(),
+    findUnique: jest.fn(),
   },
   teacherAvailability: {
     findMany: jest.fn(),
   },
   helpRequest: {
     findMany: jest.fn(),
+    findUnique: jest.fn(),
   },
+};
+
+const mockPushService = {
+  sendToUser: jest.fn(),
 };
 
 describe('NotificationsService', () => {
@@ -36,10 +43,16 @@ describe('NotificationsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPushService.sendToUser.mockResolvedValue({
+      sent: 1,
+      pruned: 0,
+      failed: 0,
+    });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: PushService, useValue: mockPushService },
       ],
     }).compile();
 
@@ -266,9 +279,52 @@ describe('NotificationsService', () => {
 
       expect(result.notified).toEqual(['t-1', 't-2']);
     });
+
+    it('pushes the request topic to every notified teacher', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue({
+        topic: 'Mitosis phases',
+        subject: { name: 'Biology' },
+      });
+
+      await service.notifyRequestCreated('r-1', 's-1', 'learner-1');
+
+      expect(mockPushService.sendToUser).toHaveBeenCalledTimes(2);
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith('t-1', {
+        title: 'New request in Biology',
+        body: 'Mitosis phases',
+        url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [150, 75, 150],
+      });
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith('t-2', {
+        title: 'New request in Biology',
+        body: 'Mitosis phases',
+        url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [150, 75, 150],
+      });
+    });
+
+    it('still fans out when push delivery fails', async () => {
+      mockPushService.sendToUser.mockRejectedValueOnce(new Error('offline'));
+
+      const result = await service.notifyRequestCreated(
+        'r-1',
+        's-1',
+        'learner-1',
+      );
+
+      expect(result).toEqual({ notified: ['t-1', 't-2'], suppressed: [] });
+      expect(prisma.notification.createMany).toHaveBeenCalled();
+    });
   });
 
   describe('learner notifications', () => {
+    beforeEach(() => {
+      prisma.helpRequest.findUnique.mockResolvedValue({ topic: 'Mitosis' });
+      prisma.user.findUnique.mockResolvedValue({ name: 'Tara' });
+    });
+
     it('notifies the learner on accept', async () => {
       prisma.notification.upsert.mockResolvedValue({ id: 'n-1' });
 
@@ -313,9 +369,38 @@ describe('NotificationsService', () => {
       });
     });
 
+    it('pushes the acceptance to the learner', async () => {
+      prisma.notification.upsert.mockResolvedValue({ id: 'n-1' });
+
+      await service.notifyRequestAccepted('r-1', 'learner-1', 'teacher-1');
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith('learner-1', {
+        title: 'Your request was accepted',
+        body: 'Tara will help with "Mitosis".',
+        url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [100],
+      });
+    });
+
+    it('pushes session updates to the learner', async () => {
+      prisma.notification.upsert.mockResolvedValue({ id: 'n-1' });
+
+      await service.notifySessionUpdated('r-1', 'learner-1', 'teacher-1');
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith('learner-1', {
+        title: 'Session details updated',
+        body: 'New time or link for "Mitosis".',
+        url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [100, 50, 100],
+        renotify: true,
+        requireInteraction: true,
+      });
+    });
+
     it('skips self-notifies', async () => {
       await service.notifyRequestAccepted('r-1', 'admin-1', 'admin-1');
       expect(prisma.notification.upsert).not.toHaveBeenCalled();
+      expect(mockPushService.sendToUser).not.toHaveBeenCalled();
     });
   });
 
@@ -332,7 +417,13 @@ describe('NotificationsService', () => {
     it('notifies eligible recipients missing a row, regardless of availability', async () => {
       const now = new Date('2026-10-18T12:00:00.000Z');
       prisma.helpRequest.findMany.mockResolvedValue([
-        { id: 'r-1', subjectId: 's-1', learnerId: 'learner-1' },
+        {
+          id: 'r-1',
+          subjectId: 's-1',
+          learnerId: 'learner-1',
+          topic: 'Mitosis',
+          subject: { name: 'Biology' },
+        },
       ]);
       prisma.teacherSubject.findMany.mockResolvedValue([
         { teacherId: 't-1', subjectId: 's-1' },
@@ -366,7 +457,22 @@ describe('NotificationsService', () => {
             lt: new Date(now.getTime() - ESCALATION_THRESHOLD_MINUTES * 60_000),
           },
         },
-        select: { id: true, subjectId: true, learnerId: true },
+        select: {
+          id: true,
+          subjectId: true,
+          learnerId: true,
+          topic: true,
+          subject: { select: { name: true } },
+        },
+      });
+      expect(mockPushService.sendToUser).toHaveBeenCalledTimes(1);
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith('t-2', {
+        title: 'New request in Biology',
+        body: 'Mitosis',
+        url: '/requests/r-1',
+        tag: 'request-r-1',
+        vibrate: [150, 75, 150],
+        silent: true,
       });
     });
   });
