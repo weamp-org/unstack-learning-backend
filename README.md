@@ -148,6 +148,10 @@ unstack-learning-backend/
 │   │   ├── notifications.controller.ts # GET/PATCH /api/v1/notifications/me (any role)
 │   │   ├── notifications.service.ts    # Availability-gated fan-out + stale-request escalation
 │   │   └── availability.ts             # Pure isAvailableNow weekday/time/timezone check
+│   ├── push/
+│   │   ├── push.module.ts
+│   │   ├── push.controller.ts # POST/DELETE/GET /api/v1/push/subscriptions + POST /test (any role, self-scoped)
+│   │   └── push.service.ts    # Subscription store + web-push sender with dead-endpoint pruning
 │   └── webhooks/
 │       ├── webhooks.module.ts
 │       ├── webhooks.controller.ts  # POST /api/v1/webhooks/clerk
@@ -157,6 +161,7 @@ unstack-learning-backend/
 │   ├── app.e2e-spec.ts
 │   ├── help-requests.e2e-spec.ts
 │   ├── notifications.e2e-spec.ts
+│   ├── push.e2e-spec.ts
 │   ├── subjects.e2e-spec.ts
 │   ├── teachers.e2e-spec.ts
 │   └── users.e2e-spec.ts
@@ -168,19 +173,23 @@ unstack-learning-backend/
 
 The template uses two env files loaded in order: `.env.local` (local overrides, gitignored) then `.env` (shared defaults, gitignored). Copy the example file to get started:
 
-| Variable                       | Required | Default                 | Description                                                                                          |
-| ------------------------------ | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                 | Yes      | —                       | PostgreSQL connection string (e.g. `postgresql://postgres:postgres@localhost:5432/unstack-learning`) |
-| `CLERK_PUBLISHABLE_KEY`        | Yes      | —                       | Clerk publishable API key                                                                            |
-| `CLERK_SECRET_KEY`             | Yes      | —                       | Clerk secret API key                                                                                 |
-| `CLERK_WEBHOOK_SIGNING_SECRET` | Yes\*    | —                       | Clerk webhook signing secret (required for webhook verification)                                     |
-| `FRONTEND_BASE_URL`            | Yes†     | `http://localhost:3001` | Allowed CORS origin (must be set in production)                                                      |
-| `PORT`                         | No       | `3000`                  | Application port                                                                                     |
-| `NODE_ENV`                     | No       | `development`           | Set to `production` to disable Swagger                                                               |
-| `LOG_LEVEL`                    | No       | `info`/`debug`          | Pino log level (`info` in production, `debug` otherwise)                                             |
+| Variable                       | Required | Default                 | Description                                                                                                         |
+| ------------------------------ | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                 | Yes      | —                       | PostgreSQL connection string (e.g. `postgresql://postgres:postgres@localhost:5432/unstack-learning`)                |
+| `CLERK_PUBLISHABLE_KEY`        | Yes      | —                       | Clerk publishable API key                                                                                           |
+| `CLERK_SECRET_KEY`             | Yes      | —                       | Clerk secret API key                                                                                                |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | Yes\*    | —                       | Clerk webhook signing secret (required for webhook verification)                                                    |
+| `FRONTEND_BASE_URL`            | Yes†     | `http://localhost:3001` | Allowed CORS origin (must be set in production)                                                                     |
+| `VAPID_PUBLIC_KEY`             | No‡      | —                       | Web-push public key (`web-push generate-vapid-keys`); also needed by the frontend as `NEXT_PUBLIC_VAPID_PUBLIC_KEY` |
+| `VAPID_PRIVATE_KEY`            | No‡      | —                       | Web-push private key (required in production alongside the public key and subject)                                  |
+| `VAPID_SUBJECT`                | No‡      | —                       | Contact URI for push services, e.g. `mailto:hello@unstacklearning.weamp.org`                                        |
+| `PORT`                         | No       | `3000`                  | Application port                                                                                                    |
+| `NODE_ENV`                     | No       | `development`           | Set to `production` to disable Swagger                                                                              |
+| `LOG_LEVEL`                    | No       | `info`/`debug`          | Pino log level (`info` in production, `debug` otherwise)                                                            |
 
 \* Required for the Clerk webhook flow, which keeps the local `User` table in sync.
 † Enforced at startup in production; falls back to `http://localhost:3001` with a warning otherwise.
+‡ Subscribing works without VAPID keys, but sending (including `POST /push/test`) 503s; all three are enforced at startup in production.
 
 ## Scripts
 

@@ -29,6 +29,9 @@ async function bootstrap() {
       'CLERK_PUBLISHABLE_KEY',
       'CLERK_SECRET_KEY',
       'FRONTEND_BASE_URL',
+      'VAPID_PUBLIC_KEY',
+      'VAPID_PRIVATE_KEY',
+      'VAPID_SUBJECT',
     ]) {
       if (!configService.get<string>(key)) {
         throw new Error(`${key} environment variable is not set`);

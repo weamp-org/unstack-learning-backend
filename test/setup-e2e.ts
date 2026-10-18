@@ -6,3 +6,9 @@
 // with this password-less dummy value.
 process.env.DATABASE_URL ??=
   'postgresql://postgres@localhost:5432/unstack-learning';
+// PushService reads VAPID keys lazily and only warns without them, but the
+// push e2e exercises the send path: throwaway non-empty values keep that
+// deterministic everywhere (web-push itself is mocked in those specs).
+process.env.VAPID_PUBLIC_KEY ??= 'e2e-test-public-key';
+process.env.VAPID_PRIVATE_KEY ??= 'e2e-test-private-key';
+process.env.VAPID_SUBJECT ??= 'mailto:e2e@example.com';
