@@ -141,7 +141,7 @@ unstack-learning-backend/
 │   ├── help-requests/
 │   │   ├── help-requests.module.ts
 │   │   ├── help-requests.controller.ts # POST/GET/PATCH /api/v1/requests (queue, edit, accept/decline/close/session/feedback)
-│   │   ├── help-requests.service.ts    # Active-subject + context gates, scoped reads, first-wins accept, owner edit, learner feedback
+│   │   ├── help-requests.service.ts    # Active-subject + context gates, scoped reads, first-wins accept, owner edit, learner feedback (+ teacher ping)
 │   │   └── dtos/
 │   │       ├── create-help-request.dto.ts
 │   │       ├── update-help-request.dto.ts  # Owner edit of OPEN requests (topic/details/links)

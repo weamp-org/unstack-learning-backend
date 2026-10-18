@@ -210,13 +210,15 @@ model PushSubscription {
 
 /// An in-app inbox row for one recipient. REQUEST_CREATED fans out to the
 /// eligible subject teachers (+ admins, with the availability rule applied);
-/// REQUEST_ACCEPTED / SESSION_UPDATED go to the learner. Escalation reuses
+/// REQUEST_ACCEPTED / SESSION_UPDATED go to the learner; FEEDBACK_CREATED
+/// goes to the assigned teacher. Escalation reuses
 /// REQUEST_CREATED so the (recipient, request, type) unique keeps it to one
 /// row per teacher even when the suppressed group is notified late.
 enum NotificationType {
   REQUEST_CREATED
   REQUEST_ACCEPTED
   SESSION_UPDATED
+  FEEDBACK_CREATED
 }
 
 model Notification {

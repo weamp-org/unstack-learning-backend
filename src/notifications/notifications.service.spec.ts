@@ -541,6 +541,48 @@ describe('NotificationsService', () => {
     });
   });
 
+  describe('notifyFeedbackCreated', () => {
+    beforeEach(() => {
+      prisma.helpRequest.findUnique.mockResolvedValue({ topic: 'Mitosis' });
+      prisma.user.findUnique.mockResolvedValue({ name: 'Ama' });
+    });
+
+    it('pings the assigned teacher', async () => {
+      prisma.notification.upsert.mockResolvedValue({ id: 'n-1' });
+
+      await service.notifyFeedbackCreated('r-1', 'teacher-1', 'learner-1');
+      expect(prisma.notification.upsert).toHaveBeenCalledWith({
+        where: {
+          recipientId_requestId_type: {
+            recipientId: 'teacher-1',
+            requestId: 'r-1',
+            type: 'FEEDBACK_CREATED',
+          },
+        },
+        update: {},
+        create: {
+          recipientId: 'teacher-1',
+          type: 'FEEDBACK_CREATED',
+          requestId: 'r-1',
+          actorId: 'learner-1',
+        },
+      });
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith('teacher-1', {
+        title: 'New feedback on your session',
+        body: 'Ama rated "Mitosis".',
+        url: '/requests/r-1',
+        tag: 'request-r-1-feedback',
+        vibrate: [100],
+      });
+    });
+
+    it('skips self-notifies', async () => {
+      await service.notifyFeedbackCreated('r-1', 'teacher-1', 'teacher-1');
+      expect(prisma.notification.upsert).not.toHaveBeenCalled();
+      expect(mockPushService.sendToUser).not.toHaveBeenCalled();
+    });
+  });
+
   describe('escalateStaleRequests', () => {
     it('returns zero when nothing is stale', async () => {
       prisma.helpRequest.findMany.mockResolvedValue([]);

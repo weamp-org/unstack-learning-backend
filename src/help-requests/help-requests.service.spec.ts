@@ -90,6 +90,7 @@ const mockNotificationsService = {
   notifyRequestCreated: jest.fn(),
   notifyRequestAccepted: jest.fn(),
   notifySessionUpdated: jest.fn(),
+  notifyFeedbackCreated: jest.fn(),
   escalateStaleRequests: jest.fn(),
 };
 
@@ -736,6 +737,21 @@ describe('HelpRequestsService', () => {
         update: { rating: 5, comment: null },
         create: { requestId: 'r-1', rating: 5, comment: null },
       });
+    });
+
+    it('pings the assigned teacher best-effort', async () => {
+      prisma.helpRequest.findUnique.mockResolvedValue(acceptedRow);
+      prisma.helpFeedback.upsert.mockResolvedValue({
+        id: 'f-1',
+        requestId: 'r-1',
+        rating: 5,
+        comment: null,
+      });
+
+      await service.upsertFeedback('learner-1', 'r-1', { rating: 5 });
+      expect(
+        mockNotificationsService.notifyFeedbackCreated,
+      ).toHaveBeenCalledWith('r-1', 'teacher-1', 'learner-1');
     });
 
     it('400s while the request is still open', async () => {

@@ -82,6 +82,7 @@ describe('HelpRequests (e2e)', () => {
     notifyRequestCreated: jest.fn(),
     notifyRequestAccepted: jest.fn(),
     notifySessionUpdated: jest.fn(),
+    notifyFeedbackCreated: jest.fn(),
     escalateStaleRequests: jest.fn(),
   };
 
