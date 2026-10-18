@@ -58,11 +58,34 @@ export interface StatsByTeacher {
   medianSecondsToAccept: number | null;
 }
 
+export interface StatsFeedbackDistribution {
+  rating: number;
+  count: number;
+}
+
+export interface StatsFeedbackComment {
+  requestId: string;
+  topic: string;
+  subjectName: string;
+  rating: number;
+  comment: string;
+  createdAt: Date;
+}
+
+export interface StatsFeedback {
+  total: number;
+  coverage: number | null;
+  averageRating: number | null;
+  distribution: StatsFeedbackDistribution[];
+  recentComments: StatsFeedbackComment[];
+}
+
 export interface AdminStats {
   overview: StatsOverview;
   responsiveness: StatsResponsiveness;
   bySubject: StatsBySubject[];
   byTeacher: StatsByTeacher[];
+  feedback: StatsFeedback;
 }
 
 @Injectable()
@@ -89,6 +112,10 @@ export class AdminStatsService {
       declineGroups,
       subjectTotals,
       subjectAccepted,
+      feedbackTotal,
+      feedbackAverage,
+      feedbackGroups,
+      feedbackComments,
     ] = await Promise.all([
       this.prisma.helpRequest.count(),
       this.prisma.helpRequest.count({ where: { status: 'OPEN' } }),
@@ -131,6 +158,29 @@ export class AdminStatsService {
         by: ['subjectId'],
         where: { status: { in: ['ACCEPTED', 'CLOSED'] } },
         _count: { _all: true },
+      }),
+      this.prisma.helpFeedback.count(),
+      this.prisma.helpFeedback.aggregate({ _avg: { rating: true } }),
+      this.prisma.helpFeedback.groupBy({
+        by: ['rating'],
+        _count: { _all: true },
+      }),
+      this.prisma.helpFeedback.findMany({
+        where: { comment: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          rating: true,
+          comment: true,
+          createdAt: true,
+          request: {
+            select: {
+              id: true,
+              topic: true,
+              subject: { select: { name: true } },
+            },
+          },
+        },
       }),
     ]);
 
@@ -229,6 +279,27 @@ export class AdminStatsService {
       },
       bySubject,
       byTeacher,
+      feedback: {
+        total: feedbackTotal,
+        coverage:
+          accepted + closed === 0 ? null : feedbackTotal / (accepted + closed),
+        averageRating: feedbackAverage._avg.rating,
+        distribution: [1, 2, 3, 4, 5].map((rating) => ({
+          rating,
+          count:
+            feedbackGroups.find((g) => g.rating === rating)?._count._all ?? 0,
+        })),
+        recentComments: feedbackComments
+          .filter((f) => f.comment !== null)
+          .map((f) => ({
+            requestId: f.request.id,
+            topic: f.request.topic,
+            subjectName: f.request.subject.name,
+            rating: f.rating,
+            comment: f.comment ?? '',
+            createdAt: f.createdAt,
+          })),
+      },
     };
   }
 }
