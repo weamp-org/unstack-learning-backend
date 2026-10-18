@@ -28,6 +28,7 @@ model User {
   requestDecisions HelpRequestDecision[]
   notifications    Notification[]       @relation("NotificationRecipient")
   triggered        Notification[]       @relation("NotificationActor")
+  pushSubscriptions PushSubscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -150,6 +151,21 @@ model HelpLink {
   url       String
 
   @@index([requestId])
+}
+
+/// One browser/device push endpoint for a user. A user can have many (phone
+/// + laptop); an endpoint belongs to whoever subscribed last on that device.
+model PushSubscription {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String @unique
+  p256dh    String
+  auth      String
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 /// An in-app inbox row for one recipient. REQUEST_CREATED fans out to the

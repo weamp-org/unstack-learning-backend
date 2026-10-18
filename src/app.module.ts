@@ -14,6 +14,7 @@ import { pinoConfig } from './logging/pino.config.js';
 import { ALL_ROUTES } from './logging/routes.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { PushModule } from './push/push.module.js';
 import { UsersModule } from './users/users.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 import { SubjectsModule } from './subjects/subjects.module.js';
@@ -50,6 +51,7 @@ import { TeachersModule } from './teachers/teachers.module.js';
     PrismaModule,
     HelpRequestsModule,
     NotificationsModule,
+    PushModule,
     SubjectsModule,
     TeachersModule,
     UsersModule,
