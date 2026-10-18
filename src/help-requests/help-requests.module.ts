@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 
 import { HelpRequestsController } from './help-requests.controller.js';
 import { HelpRequestsService } from './help-requests.service.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [HelpRequestsController],
   providers: [HelpRequestsService],
 })
