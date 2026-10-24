@@ -17,6 +17,8 @@ const mockPrismaService = {
     updateMany: jest.fn(),
     createMany: jest.fn(),
     upsert: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
   },
   teacherSubject: {
     findMany: jest.fn(),
@@ -175,6 +177,53 @@ describe('NotificationsService', () => {
       expect(prisma.notification.updateMany).toHaveBeenCalledTimes(1);
       expect(seenWhere).toEqual({ recipientId: 'user-1', readAt: null });
       expect(seenReadAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('dismiss', () => {
+    it('deletes an owned row', async () => {
+      prisma.notification.findFirst.mockResolvedValue({ id: 'n-1' });
+      prisma.notification.delete.mockResolvedValue({ id: 'n-1' });
+
+      await expect(service.dismiss('user-1', 'n-1')).resolves.toEqual({
+        id: 'n-1',
+        dismissed: true,
+      });
+      expect(prisma.notification.findFirst).toHaveBeenCalledWith({
+        where: { id: 'n-1', recipientId: 'user-1' },
+      });
+      expect(prisma.notification.delete).toHaveBeenCalledWith({
+        where: { id: 'n-1' },
+      });
+    });
+
+    it("treats another recipient's row as missing", async () => {
+      prisma.notification.findFirst.mockResolvedValue(null);
+
+      await expect(service.dismiss('user-1', 'n-2')).rejects.toThrow(
+        'Notification n-2 not found',
+      );
+      expect(prisma.notification.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('clearMine', () => {
+    it('defaults to read rows only', async () => {
+      prisma.notification.deleteMany.mockResolvedValue({ count: 4 });
+
+      await expect(service.clearMine('user-1')).resolves.toEqual({ count: 4 });
+      expect(prisma.notification.deleteMany).toHaveBeenCalledWith({
+        where: { recipientId: 'user-1', readAt: { not: null } },
+      });
+    });
+
+    it('clears everything when readOnly is false', async () => {
+      prisma.notification.deleteMany.mockResolvedValue({ count: 9 });
+
+      await service.clearMine('user-1', false);
+      expect(prisma.notification.deleteMany).toHaveBeenCalledWith({
+        where: { recipientId: 'user-1' },
+      });
     });
   });
 

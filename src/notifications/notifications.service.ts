@@ -85,6 +85,31 @@ export class NotificationsService {
     });
   }
 
+  /// Removes one inbox row. Notifications are a derived event record, so a
+  /// dismissed row is not replaced — and if the same event fires again, the
+  /// upsert creates it fresh.
+  async dismiss(recipientId: string, id: string) {
+    const row = await this.prisma.notification.findFirst({
+      where: { id, recipientId },
+    });
+    // Scoped lookup: another recipient's row reads as missing rather than
+    // leaking its existence.
+    if (!row) throw new NotFoundException(`Notification ${id} not found`);
+    await this.prisma.notification.delete({ where: { id } });
+    return { id, dismissed: true as const };
+  }
+
+  /// Clearing read rows is the common case — the inbox keeps what still
+  /// needs attention. `readOnly: false` empties it completely.
+  clearMine(recipientId: string, readOnly = true) {
+    return this.prisma.notification.deleteMany({
+      where: {
+        recipientId,
+        ...(readOnly ? { readAt: { not: null } } : {}),
+      },
+    });
+  }
+
   /// Fans out REQUEST_CREATED to the subject's teachers + admins. Teachers
   /// with no availability windows set are always notified (they haven't
   /// opted into filtering); teachers with windows are notified only when a
