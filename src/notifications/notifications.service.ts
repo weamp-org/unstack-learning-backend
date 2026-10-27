@@ -13,6 +13,11 @@ import { isAvailableNow, overrideCutoff } from './availability.js';
 /// then it runs opportunistically off the teacher queue read.
 export const ESCALATION_THRESHOLD_MINUTES = 45;
 
+/// Archived rows are a safety net, not a record: purge them on read once they
+/// stop being useful (same opportunistic pattern as expired availability
+/// overrides). No cron needed yet.
+export const ARCHIVE_RETENTION_DAYS = 30;
+
 const MINE_INCLUDE = {
   request: {
     select: {
@@ -50,9 +55,20 @@ export class NotificationsService {
     );
   }
 
-  listMine(recipientId: string, unreadOnly = false) {
+  /// Inbox reads always exclude archived rows; the archive view is the only
+  /// caller that asks for them. Purge rides on the read so no cron is needed.
+  async listMine(
+    recipientId: string,
+    options: { archived?: boolean; unreadOnly?: boolean } = {},
+  ) {
+    const { archived = false, unreadOnly = false } = options;
+    await this.purgeArchived(recipientId);
     return this.prisma.notification.findMany({
-      where: { recipientId, ...(unreadOnly ? { readAt: null } : {}) },
+      where: {
+        recipientId,
+        archivedAt: archived ? { not: null } : null,
+        ...(unreadOnly ? { readAt: null } : {}),
+      },
       include: MINE_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
@@ -60,17 +76,22 @@ export class NotificationsService {
 
   unreadCount(recipientId: string) {
     return this.prisma.notification.count({
-      where: { recipientId, readAt: null },
+      where: { recipientId, readAt: null, archivedAt: null },
     });
   }
 
-  async markRead(recipientId: string, id: string) {
+  /// Scoped lookup: other recipients' rows read as missing rather than
+  /// leaking their existence.
+  private async scoped(recipientId: string, id: string) {
     const row = await this.prisma.notification.findFirst({
       where: { id, recipientId },
     });
-    // Scoped lookup: other recipients' rows read as missing rather than
-    // leaking their existence.
     if (!row) throw new NotFoundException(`Notification ${id} not found`);
+    return row;
+  }
+
+  async markRead(recipientId: string, id: string) {
+    const row = await this.scoped(recipientId, id);
     if (row.readAt !== null) return row;
     return this.prisma.notification.update({
       where: { id },
@@ -80,33 +101,68 @@ export class NotificationsService {
 
   markAllRead(recipientId: string) {
     return this.prisma.notification.updateMany({
-      where: { recipientId, readAt: null },
+      where: { recipientId, readAt: null, archivedAt: null },
       data: { readAt: new Date() },
     });
   }
 
-  /// Removes one inbox row. Notifications are a derived event record, so a
-  /// dismissed row is not replaced — and if the same event fires again, the
-  /// upsert creates it fresh.
-  async dismiss(recipientId: string, id: string) {
-    const row = await this.prisma.notification.findFirst({
-      where: { id, recipientId },
+  /// Soft delete: archived rows leave the inbox but keep the
+  /// `[recipientId, requestId, type]` key, so a repeat event (a second session
+  /// update, an escalated request) cannot resurrect what was put away.
+  /// Idempotent: re-archiving returns the row unchanged.
+  async archive(recipientId: string, id: string) {
+    const row = await this.scoped(recipientId, id);
+    if (row.archivedAt !== null) return row;
+    return this.prisma.notification.update({
+      where: { id },
+      data: { archivedAt: new Date() },
     });
-    // Scoped lookup: another recipient's row reads as missing rather than
-    // leaking its existence.
-    if (!row) throw new NotFoundException(`Notification ${id} not found`);
-    await this.prisma.notification.delete({ where: { id } });
-    return { id, dismissed: true as const };
   }
 
-  /// Clearing read rows is the common case — the inbox keeps what still
-  /// needs attention. `readOnly: false` empties it completely.
-  clearMine(recipientId: string, readOnly = true) {
-    return this.prisma.notification.deleteMany({
+  async restore(recipientId: string, id: string) {
+    const row = await this.scoped(recipientId, id);
+    if (row.archivedAt === null) return row;
+    return this.prisma.notification.update({
+      where: { id },
+      data: { archivedAt: null },
+    });
+  }
+
+  /// The inbox's "archive read" / "archive all". Read rows are the common
+  /// case, matching the old clear-read default; `readOnly: false` puts
+  /// everything away.
+  archiveMine(recipientId: string, readOnly = true) {
+    return this.prisma.notification.updateMany({
       where: {
         recipientId,
+        archivedAt: null,
         ...(readOnly ? { readAt: { not: null } } : {}),
       },
+      data: { archivedAt: new Date() },
+    });
+  }
+
+  /// Hard delete, reachable only from the archive view.
+  async deleteOne(recipientId: string, id: string) {
+    await this.scoped(recipientId, id);
+    await this.prisma.notification.delete({ where: { id } });
+    return { id, deleted: true as const };
+  }
+
+  deleteArchived(recipientId: string) {
+    return this.prisma.notification.deleteMany({
+      where: { recipientId, archivedAt: { not: null } },
+    });
+  }
+
+  /// Bounded to the caller's rows: cheaper than a global sweep and keeps the
+  /// index useful.
+  purgeArchived(recipientId: string, now: Date = new Date()) {
+    const cutoff = new Date(
+      now.getTime() - ARCHIVE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    );
+    return this.prisma.notification.deleteMany({
+      where: { recipientId, archivedAt: { not: null, lt: cutoff } },
     });
   }
 

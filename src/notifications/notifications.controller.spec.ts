@@ -11,8 +11,11 @@ const mockNotificationsService = {
   unreadCount: jest.fn(),
   markAllRead: jest.fn(),
   markRead: jest.fn(),
-  clearMine: jest.fn(),
-  dismiss: jest.fn(),
+  archive: jest.fn(),
+  restore: jest.fn(),
+  archiveMine: jest.fn(),
+  deleteOne: jest.fn(),
+  deleteArchived: jest.fn(),
   escalateStaleRequests: jest.fn(),
 };
 
@@ -44,25 +47,41 @@ describe('NotificationsController', () => {
     expect(controller).toBeDefined();
   });
 
-  it('listMine delegates with the caller id', async () => {
+  it('listMine delegates with the caller id and inbox defaults', async () => {
     const rows = [{ id: 'n-1' }];
     service.listMine.mockResolvedValue(rows);
 
-    await expect(controller.listMine('user-1', undefined)).resolves.toEqual(
-      rows,
-    );
-    expect(service.listMine).toHaveBeenCalledWith('user-1', false);
+    await expect(
+      controller.listMine('user-1', undefined, undefined),
+    ).resolves.toEqual(rows);
+    expect(service.listMine).toHaveBeenCalledWith('user-1', {
+      archived: false,
+      unreadOnly: false,
+    });
   });
 
   it('listMine passes unreadOnly through', async () => {
     service.listMine.mockResolvedValue([]);
 
-    await controller.listMine('user-1', 'true');
-    expect(service.listMine).toHaveBeenCalledWith('user-1', true);
+    await controller.listMine('user-1', undefined, 'true');
+    expect(service.listMine).toHaveBeenCalledWith('user-1', {
+      archived: false,
+      unreadOnly: true,
+    });
+  });
+
+  it('listMine passes archived through', async () => {
+    service.listMine.mockResolvedValue([]);
+
+    await controller.listMine('user-1', 'true', undefined);
+    expect(service.listMine).toHaveBeenCalledWith('user-1', {
+      archived: true,
+      unreadOnly: false,
+    });
   });
 
   it('listMine throws without a caller id', () => {
-    expect(() => controller.listMine(null, undefined)).toThrow(
+    expect(() => controller.listMine(null, undefined, undefined)).toThrow(
       UnauthorizedException,
     );
     expect(service.listMine).not.toHaveBeenCalled();
@@ -113,44 +132,90 @@ describe('NotificationsController', () => {
     expect(service.markRead).not.toHaveBeenCalled();
   });
 
-  it('clearMine defaults to read rows only', async () => {
-    service.clearMine.mockResolvedValue({ count: 3 });
+  it('archiveAll defaults to read rows only', async () => {
+    service.archiveMine.mockResolvedValue({ count: 3 });
 
-    await expect(controller.clearMine('user-1', undefined)).resolves.toEqual({
+    await expect(controller.archiveAll('user-1', undefined)).resolves.toEqual({
       count: 3,
     });
-    expect(service.clearMine).toHaveBeenCalledWith('user-1', true);
+    expect(service.archiveMine).toHaveBeenCalledWith('user-1', true);
   });
 
-  it('clearMine clears everything only when asked', async () => {
-    service.clearMine.mockResolvedValue({ count: 5 });
+  it('archiveAll archives everything only when asked', async () => {
+    service.archiveMine.mockResolvedValue({ count: 5 });
 
-    await controller.clearMine('user-1', 'false');
-    expect(service.clearMine).toHaveBeenCalledWith('user-1', false);
+    await controller.archiveAll('user-1', 'false');
+    expect(service.archiveMine).toHaveBeenCalledWith('user-1', false);
   });
 
-  it('clearMine throws without a caller id', () => {
-    expect(() => controller.clearMine(null, undefined)).toThrow(
+  it('archiveAll throws without a caller id', () => {
+    expect(() => controller.archiveAll(null, undefined)).toThrow(
       UnauthorizedException,
     );
-    expect(service.clearMine).not.toHaveBeenCalled();
+    expect(service.archiveMine).not.toHaveBeenCalled();
   });
 
-  it('dismiss delegates with both ids', async () => {
-    service.dismiss.mockResolvedValue({ id: 'n-1', dismissed: true });
+  it('archive delegates with both ids', async () => {
+    const row = { id: 'n-1' };
+    service.archive.mockResolvedValue(row);
 
-    await expect(controller.dismiss('user-1', 'n-1')).resolves.toEqual({
+    await expect(controller.archive('user-1', 'n-1')).resolves.toEqual(row);
+    expect(service.archive).toHaveBeenCalledWith('user-1', 'n-1');
+  });
+
+  it('archive throws without a caller id', () => {
+    expect(() => controller.archive(null, 'n-1')).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.archive).not.toHaveBeenCalled();
+  });
+
+  it('restore delegates with both ids', async () => {
+    const row = { id: 'n-1' };
+    service.restore.mockResolvedValue(row);
+
+    await expect(controller.restore('user-1', 'n-1')).resolves.toEqual(row);
+    expect(service.restore).toHaveBeenCalledWith('user-1', 'n-1');
+  });
+
+  it('restore throws without a caller id', () => {
+    expect(() => controller.restore(null, 'n-1')).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.restore).not.toHaveBeenCalled();
+  });
+
+  it('deleteOne delegates with both ids', async () => {
+    service.deleteOne.mockResolvedValue({ id: 'n-1', deleted: true });
+
+    await expect(controller.deleteOne('user-1', 'n-1')).resolves.toEqual({
       id: 'n-1',
-      dismissed: true,
+      deleted: true,
     });
-    expect(service.dismiss).toHaveBeenCalledWith('user-1', 'n-1');
+    expect(service.deleteOne).toHaveBeenCalledWith('user-1', 'n-1');
   });
 
-  it('dismiss throws without a caller id', () => {
-    expect(() => controller.dismiss(null, 'n-1')).toThrow(
+  it('deleteOne throws without a caller id', () => {
+    expect(() => controller.deleteOne(null, 'n-1')).toThrow(
       UnauthorizedException,
     );
-    expect(service.dismiss).not.toHaveBeenCalled();
+    expect(service.deleteOne).not.toHaveBeenCalled();
+  });
+
+  it('deleteArchived delegates with the caller id', async () => {
+    service.deleteArchived.mockResolvedValue({ count: 4 });
+
+    await expect(controller.deleteArchived('user-1')).resolves.toEqual({
+      count: 4,
+    });
+    expect(service.deleteArchived).toHaveBeenCalledWith('user-1');
+  });
+
+  it('deleteArchived throws without a caller id', () => {
+    expect(() => controller.deleteArchived(null)).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.deleteArchived).not.toHaveBeenCalled();
   });
 
   it('escalate delegates to the service', async () => {

@@ -39,6 +39,8 @@ describe('Notifications (e2e)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
       createMany: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
     },
   };
 
@@ -104,7 +106,23 @@ describe('Notifications (e2e)', () => {
         .expect(200)
         .expect([row]);
       expect(prismaMock.notification.findMany).toHaveBeenLastCalledWith(
-        expect.objectContaining({ where: { recipientId: 'user-1' } }),
+        expect.objectContaining({
+          where: { recipientId: 'user-1', archivedAt: null },
+        }),
+      );
+    });
+
+    it('GET /api/v1/notifications/me?archived=true returns the archive', async () => {
+      prismaMock.notification.findMany.mockResolvedValue([]);
+
+      await request(app.getHttpServer())
+        .get('/api/v1/notifications/me?archived=true')
+        .expect(200)
+        .expect([]);
+      expect(prismaMock.notification.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { recipientId: 'user-1', archivedAt: { not: null } },
+        }),
       );
     });
 
@@ -160,8 +178,106 @@ describe('Notifications (e2e)', () => {
       await request(app.getHttpServer())
         .patch('/api/v1/notifications/me/read-all')
         .expect(200);
-      expect(seenWhere).toEqual({ recipientId: 'user-1', readAt: null });
+      expect(seenWhere).toEqual({
+        recipientId: 'user-1',
+        readAt: null,
+        archivedAt: null,
+      });
       expect(seenReadAt).toBeInstanceOf(Date);
+    });
+
+    it('PATCH /api/v1/notifications/:id/archive archives a row', async () => {
+      prismaMock.notification.findFirst.mockResolvedValue({
+        ...row,
+        archivedAt: null,
+      });
+      let archivedAt: Date | undefined;
+      prismaMock.notification.update.mockImplementation(
+        (args: { data: { archivedAt: Date } }) => {
+          archivedAt = args.data.archivedAt;
+          return Promise.resolve({ ...row, archivedAt });
+        },
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/notifications/n-1/archive')
+        .expect(200);
+      expect(archivedAt).toBeInstanceOf(Date);
+      expect(prismaMock.notification.update).toHaveBeenLastCalledWith({
+        where: { id: 'n-1' },
+        data: { archivedAt },
+      });
+      expect(prismaMock.notification.delete).not.toHaveBeenCalled();
+    });
+
+    it('PATCH /api/v1/notifications/:id/restore returns a row to the inbox', async () => {
+      prismaMock.notification.findFirst.mockResolvedValue({
+        ...row,
+        archivedAt: new Date(),
+      });
+      prismaMock.notification.update.mockResolvedValue({
+        ...row,
+        archivedAt: null,
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/notifications/n-1/restore')
+        .expect(200);
+      expect(prismaMock.notification.update).toHaveBeenLastCalledWith({
+        where: { id: 'n-1' },
+        data: { archivedAt: null },
+      });
+    });
+
+    it('PATCH /api/v1/notifications/me/archive-all archives read rows', async () => {
+      let seenWhere: unknown;
+      let archivedAt: Date | undefined;
+      prismaMock.notification.updateMany.mockImplementation(
+        (args: {
+          where: { recipientId: string; archivedAt: null };
+          data: { archivedAt: Date };
+        }) => {
+          seenWhere = args.where;
+          archivedAt = args.data.archivedAt;
+          return Promise.resolve({ count: 3 });
+        },
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/notifications/me/archive-all')
+        .expect(200)
+        .expect({ count: 3 });
+      expect(seenWhere).toEqual({
+        recipientId: 'user-1',
+        archivedAt: null,
+        readAt: { not: null },
+      });
+      expect(archivedAt).toBeInstanceOf(Date);
+    });
+
+    it('DELETE /api/v1/notifications/archive empties only the archive', async () => {
+      prismaMock.notification.deleteMany.mockResolvedValue({ count: 2 });
+
+      await request(app.getHttpServer())
+        .delete('/api/v1/notifications/archive')
+        .expect(200)
+        .expect({ count: 2 });
+      expect(prismaMock.notification.deleteMany).toHaveBeenLastCalledWith({
+        where: { recipientId: 'user-1', archivedAt: { not: null } },
+      });
+    });
+
+    it('DELETE /api/v1/notifications/:id hard-deletes a row', async () => {
+      prismaMock.notification.findFirst.mockResolvedValue({
+        ...row,
+        archivedAt: new Date(),
+      });
+      prismaMock.notification.delete.mockResolvedValue(row);
+
+      await request(app.getHttpServer())
+        .delete('/api/v1/notifications/n-1')
+        .expect(200)
+        .expect({ id: 'n-1', deleted: true });
     });
 
     it('POST /api/v1/notifications/escalate forbids non-admins', async () => {

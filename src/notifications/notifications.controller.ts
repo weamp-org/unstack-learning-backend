@@ -26,10 +26,14 @@ export class NotificationsController {
   @Get('me')
   listMine(
     @UserClerkId() clerkId: string | null,
+    @Query('archived') archived?: string,
     @Query('unreadOnly') unreadOnly?: string,
   ) {
     if (clerkId === null) throw new UnauthorizedException();
-    return this.notificationsService.listMine(clerkId, unreadOnly === 'true');
+    return this.notificationsService.listMine(clerkId, {
+      archived: archived === 'true',
+      unreadOnly: unreadOnly === 'true',
+    });
   }
 
   @Get('me/unread-count')
@@ -46,31 +50,50 @@ export class NotificationsController {
   }
 
   /**
-   * Empties the caller's inbox. `readOnly` defaults to true on the service:
-   * clearing the rows already read is the common case, and a full wipe has to
-   * be asked for explicitly.
-   *
-   * Declared before `:id` so "me" is never captured as an id.
+   * Puts the caller's inbox away instead of destroying it: read rows by
+   * default, everything when `readOnly=false`. Archived rows can be restored
+   * or hard-deleted from the archive view.
    */
-  @Delete()
-  clearMine(
+  @Patch('me/archive-all')
+  archiveAll(
     @UserClerkId() clerkId: string | null,
     @Query('readOnly') readOnly?: string,
   ) {
     if (clerkId === null) throw new UnauthorizedException();
-    return this.notificationsService.clearMine(clerkId, readOnly !== 'false');
+    return this.notificationsService.archiveMine(clerkId, readOnly !== 'false');
   }
 
-  @Delete(':id')
-  dismiss(@UserClerkId() clerkId: string | null, @Param('id') id: string) {
+  /// Empties the archive. Declared before ':id' so "archive" is never
+  /// captured as an id.
+  @Delete('archive')
+  deleteArchived(@UserClerkId() clerkId: string | null) {
     if (clerkId === null) throw new UnauthorizedException();
-    return this.notificationsService.dismiss(clerkId, id);
+    return this.notificationsService.deleteArchived(clerkId);
+  }
+
+  @Patch(':id/archive')
+  archive(@UserClerkId() clerkId: string | null, @Param('id') id: string) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.notificationsService.archive(clerkId, id);
+  }
+
+  @Patch(':id/restore')
+  restore(@UserClerkId() clerkId: string | null, @Param('id') id: string) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.notificationsService.restore(clerkId, id);
   }
 
   @Patch(':id/read')
   markRead(@UserClerkId() clerkId: string | null, @Param('id') id: string) {
     if (clerkId === null) throw new UnauthorizedException();
     return this.notificationsService.markRead(clerkId, id);
+  }
+
+  /// Hard delete — the archive view's only destructive action.
+  @Delete(':id')
+  deleteOne(@UserClerkId() clerkId: string | null, @Param('id') id: string) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.notificationsService.deleteOne(clerkId, id);
   }
 
   // Manual trigger for the stale-request fallback until a real cron exists.

@@ -84,13 +84,14 @@ describe('NotificationsService', () => {
       actor: { select: { id: true, name: true } },
     };
 
-    it('returns newest first, scoped to the recipient', async () => {
+    it('returns newest first, scoped to the recipient, inbox only', async () => {
       const rows = [{ id: 'n-1' }];
       prisma.notification.findMany.mockResolvedValue(rows);
 
       await expect(service.listMine('user-1')).resolves.toEqual(rows);
+      expect(prisma.notification.deleteMany).toHaveBeenCalled();
       expect(prisma.notification.findMany).toHaveBeenCalledWith({
-        where: { recipientId: 'user-1' },
+        where: { recipientId: 'user-1', archivedAt: null },
         include: listMineInclude,
         orderBy: { createdAt: 'desc' },
       });
@@ -99,12 +100,42 @@ describe('NotificationsService', () => {
     it('filters to unread when requested', async () => {
       prisma.notification.findMany.mockResolvedValue([]);
 
-      await service.listMine('user-1', true);
+      await service.listMine('user-1', { unreadOnly: true });
       expect(prisma.notification.findMany).toHaveBeenCalledWith({
-        where: { recipientId: 'user-1', readAt: null },
+        where: { recipientId: 'user-1', archivedAt: null, readAt: null },
         include: listMineInclude,
         orderBy: { createdAt: 'desc' },
       });
+    });
+
+    it('reads the archive when asked', async () => {
+      prisma.notification.findMany.mockResolvedValue([]);
+
+      await service.listMine('user-1', { archived: true });
+      expect(prisma.notification.findMany).toHaveBeenCalledWith({
+        where: { recipientId: 'user-1', archivedAt: { not: null } },
+        include: listMineInclude,
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+
+    it('purges archived rows past the retention window on read', async () => {
+      prisma.notification.findMany.mockResolvedValue([]);
+      let cutoff: Date | undefined;
+      prisma.notification.deleteMany.mockImplementation(
+        (args: {
+          where: { recipientId: string; archivedAt: { lt: Date } };
+        }) => {
+          cutoff = args.where.archivedAt.lt;
+          return Promise.resolve({ count: 0 });
+        },
+      );
+
+      await service.listMine('user-1');
+      expect(cutoff).toBeInstanceOf(Date);
+      const ageDays = (Date.now() - (cutoff as Date).getTime()) / 86_400_000;
+      expect(ageDays).toBeGreaterThan(29.9);
+      expect(ageDays).toBeLessThan(30.1);
     });
   });
 
@@ -114,7 +145,7 @@ describe('NotificationsService', () => {
 
       await expect(service.unreadCount('user-1')).resolves.toBe(2);
       expect(prisma.notification.count).toHaveBeenCalledWith({
-        where: { recipientId: 'user-1', readAt: null },
+        where: { recipientId: 'user-1', readAt: null, archivedAt: null },
       });
     });
   });
@@ -175,22 +206,141 @@ describe('NotificationsService', () => {
         count: 3,
       });
       expect(prisma.notification.updateMany).toHaveBeenCalledTimes(1);
-      expect(seenWhere).toEqual({ recipientId: 'user-1', readAt: null });
+      expect(seenWhere).toEqual({
+        recipientId: 'user-1',
+        readAt: null,
+        archivedAt: null,
+      });
       expect(seenReadAt).toBeInstanceOf(Date);
     });
   });
 
-  describe('dismiss', () => {
-    it('deletes an owned row', async () => {
+  describe('archive', () => {
+    it('soft-deletes an owned row', async () => {
+      prisma.notification.findFirst.mockResolvedValue({
+        id: 'n-1',
+        archivedAt: null,
+      });
+      let archivedAt: Date | undefined;
+      prisma.notification.update.mockImplementation(
+        (args: { data: { archivedAt: Date } }) => {
+          archivedAt = args.data.archivedAt;
+          return Promise.resolve({ id: 'n-1' });
+        },
+      );
+
+      await expect(service.archive('user-1', 'n-1')).resolves.toMatchObject({
+        id: 'n-1',
+      });
+      expect(archivedAt).toBeInstanceOf(Date);
+      expect(prisma.notification.update).toHaveBeenCalledWith({
+        where: { id: 'n-1' },
+        data: { archivedAt },
+      });
+      expect(prisma.notification.delete).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent for already-archived rows', async () => {
+      const row = { id: 'n-1', archivedAt: new Date() };
+      prisma.notification.findFirst.mockResolvedValue(row);
+
+      await expect(service.archive('user-1', 'n-1')).resolves.toEqual(row);
+      expect(prisma.notification.update).not.toHaveBeenCalled();
+    });
+
+    it("treats another recipient's row as missing", async () => {
+      prisma.notification.findFirst.mockResolvedValue(null);
+
+      await expect(service.archive('user-1', 'n-2')).rejects.toThrow(
+        'Notification n-2 not found',
+      );
+      expect(prisma.notification.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restore', () => {
+    it('clears archivedAt for the owner', async () => {
+      prisma.notification.findFirst.mockResolvedValue({
+        id: 'n-1',
+        archivedAt: new Date(),
+      });
+      prisma.notification.update.mockResolvedValue({
+        id: 'n-1',
+        archivedAt: null,
+      });
+
+      await service.restore('user-1', 'n-1');
+      expect(prisma.notification.update).toHaveBeenCalledWith({
+        where: { id: 'n-1' },
+        data: { archivedAt: null },
+      });
+    });
+
+    it('is idempotent for rows that are already in the inbox', async () => {
+      const row = { id: 'n-1', archivedAt: null };
+      prisma.notification.findFirst.mockResolvedValue(row);
+
+      await expect(service.restore('user-1', 'n-1')).resolves.toEqual(row);
+      expect(prisma.notification.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('archiveMine', () => {
+    it('defaults to read rows only', async () => {
+      let seenWhere: unknown;
+      let archivedAt: Date | undefined;
+      prisma.notification.updateMany.mockImplementation(
+        (args: {
+          where: { recipientId: string; archivedAt: null; readAt: null };
+          data: { archivedAt: Date };
+        }) => {
+          seenWhere = args.where;
+          archivedAt = args.data.archivedAt;
+          return Promise.resolve({ count: 4 });
+        },
+      );
+
+      await expect(service.archiveMine('user-1')).resolves.toEqual({
+        count: 4,
+      });
+      expect(seenWhere).toEqual({
+        recipientId: 'user-1',
+        archivedAt: null,
+        readAt: { not: null },
+      });
+      expect(archivedAt).toBeInstanceOf(Date);
+    });
+
+    it('archives everything when readOnly is false', async () => {
+      let seenWhere: unknown;
+      let archivedAt: Date | undefined;
+      prisma.notification.updateMany.mockImplementation(
+        (args: {
+          where: { recipientId: string; archivedAt: null };
+          data: { archivedAt: Date };
+        }) => {
+          seenWhere = args.where;
+          archivedAt = args.data.archivedAt;
+          return Promise.resolve({ count: 9 });
+        },
+      );
+
+      await expect(service.archiveMine('user-1', false)).resolves.toEqual({
+        count: 9,
+      });
+      expect(seenWhere).toEqual({ recipientId: 'user-1', archivedAt: null });
+      expect(archivedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('deleteOne', () => {
+    it('hard-deletes an owned row', async () => {
       prisma.notification.findFirst.mockResolvedValue({ id: 'n-1' });
       prisma.notification.delete.mockResolvedValue({ id: 'n-1' });
 
-      await expect(service.dismiss('user-1', 'n-1')).resolves.toEqual({
+      await expect(service.deleteOne('user-1', 'n-1')).resolves.toEqual({
         id: 'n-1',
-        dismissed: true,
-      });
-      expect(prisma.notification.findFirst).toHaveBeenCalledWith({
-        where: { id: 'n-1', recipientId: 'user-1' },
+        deleted: true,
       });
       expect(prisma.notification.delete).toHaveBeenCalledWith({
         where: { id: 'n-1' },
@@ -200,29 +350,22 @@ describe('NotificationsService', () => {
     it("treats another recipient's row as missing", async () => {
       prisma.notification.findFirst.mockResolvedValue(null);
 
-      await expect(service.dismiss('user-1', 'n-2')).rejects.toThrow(
+      await expect(service.deleteOne('user-1', 'n-2')).rejects.toThrow(
         'Notification n-2 not found',
       );
       expect(prisma.notification.delete).not.toHaveBeenCalled();
     });
   });
 
-  describe('clearMine', () => {
-    it('defaults to read rows only', async () => {
-      prisma.notification.deleteMany.mockResolvedValue({ count: 4 });
+  describe('deleteArchived', () => {
+    it('empties only the archive', async () => {
+      prisma.notification.deleteMany.mockResolvedValue({ count: 7 });
 
-      await expect(service.clearMine('user-1')).resolves.toEqual({ count: 4 });
-      expect(prisma.notification.deleteMany).toHaveBeenCalledWith({
-        where: { recipientId: 'user-1', readAt: { not: null } },
+      await expect(service.deleteArchived('user-1')).resolves.toEqual({
+        count: 7,
       });
-    });
-
-    it('clears everything when readOnly is false', async () => {
-      prisma.notification.deleteMany.mockResolvedValue({ count: 9 });
-
-      await service.clearMine('user-1', false);
       expect(prisma.notification.deleteMany).toHaveBeenCalledWith({
-        where: { recipientId: 'user-1' },
+        where: { recipientId: 'user-1', archivedAt: { not: null } },
       });
     });
   });
