@@ -30,6 +30,7 @@ model User {
   notifications    Notification[]       @relation("NotificationRecipient")
   triggered        Notification[]       @relation("NotificationActor")
   pushSubscriptions PushSubscription[]
+  mediaUploads     MediaUpload[]        @relation("MediaOwner")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -107,6 +108,7 @@ model HelpRequest {
   topic     String
   details   String?
   links     HelpLink[]
+  media     MediaUpload[]
   status    HelpRequestStatus @default(OPEN)
   teacherId String?
   teacher   User?    @relation("AssignedTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
@@ -148,6 +150,43 @@ model HelpRequestDecision {
 enum HelpDecision {
   ACCEPTED
   DECLINED
+}
+
+/// One file a learner attached to a request. Bytes live in R2 (private bucket,
+/// presigned URLs); this row is metadata plus the object key. Rows start
+/// PENDING while the browser uploads, become READY once the object is verified,
+/// and are linked to the request on submit — so an abandoned draft leaves no
+/// half-attached media behind.
+model MediaUpload {
+  id              String      @id @default(cuid())
+  ownerId         String
+  owner           User        @relation("MediaOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  requestId       String?
+  request         HelpRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  kind            MediaKind
+  objectKey       String      @unique
+  contentType     String
+  byteSize        Int
+  /// Audio only, reported by the browser: advisory, since verifying it server
+  /// side would mean running ffprobe.
+  durationSeconds Int?
+  status          MediaStatus @default(PENDING)
+  createdAt       DateTime    @default(now())
+  completedAt     DateTime?
+
+  @@index([ownerId, status])
+  @@index([ownerId, createdAt])
+  @@index([requestId])
+}
+
+enum MediaKind {
+  IMAGE
+  AUDIO
+}
+
+enum MediaStatus {
+  PENDING
+  READY
 }
 
 /// The arranged help session. Links are pasted by hand by the teacher —

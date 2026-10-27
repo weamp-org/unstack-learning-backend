@@ -32,6 +32,9 @@ async function bootstrap() {
       'VAPID_PUBLIC_KEY',
       'VAPID_PRIVATE_KEY',
       'VAPID_SUBJECT',
+      'R2_ACCESS_KEY_ID',
+      'R2_SECRET_ACCESS_KEY',
+      'R2_BUCKET',
     ]) {
       if (!configService.get<string>(key)) {
         throw new Error(`${key} environment variable is not set`);

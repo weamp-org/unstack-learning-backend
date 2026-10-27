@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { MediaService } from '../media/media.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HelpRequestsService } from './help-requests.service.js';
@@ -22,6 +23,7 @@ const mockPrismaService = {
     create: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     update: jest.fn(),
   },
   helpLink: {
@@ -48,6 +50,10 @@ interface TxMock {
   helpRequest: {
     findUnique: jest.Mock;
     update: jest.Mock;
+    create: jest.Mock;
+  };
+  mediaUpload: {
+    update: jest.Mock;
   };
   helpLink: {
     deleteMany: jest.Mock;
@@ -68,6 +74,10 @@ const mockTx: TxMock = {
   helpRequest: {
     findUnique: jest.fn(),
     update: jest.fn(),
+    create: jest.fn(),
+  },
+  mediaUpload: {
+    update: jest.fn(),
   },
   helpLink: {
     deleteMany: jest.fn(),
@@ -84,10 +94,30 @@ const mockTx: TxMock = {
   },
 };
 
+const mediaSelect = {
+  select: {
+    id: true,
+    kind: true,
+    contentType: true,
+    byteSize: true,
+    durationSeconds: true,
+    objectKey: true,
+  },
+};
+const mediaSummarySelect = { select: { id: true, kind: true } };
+
 const dto = {
   subjectId: 's-1',
   topic: 'Integration by parts keeps failing',
   details: 'LIATE ordering confuses me',
+};
+
+const mockMediaService = {
+  sign: jest.fn(),
+  assertAttachable: jest.fn(),
+  copyIntoRequests: jest.fn(),
+  rollbackCopies: jest.fn(),
+  dropStagedCopies: jest.fn(),
 };
 
 const mockNotificationsService = {
@@ -104,6 +134,11 @@ describe('HelpRequestsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockMediaService.sign.mockResolvedValue([]);
+    mockMediaService.assertAttachable.mockResolvedValue([]);
+    mockMediaService.copyIntoRequests.mockResolvedValue([]);
+    mockMediaService.rollbackCopies.mockResolvedValue(undefined);
+    mockMediaService.dropStagedCopies.mockResolvedValue(undefined);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HelpRequestsService,
@@ -112,6 +147,7 @@ describe('HelpRequestsService', () => {
           provide: NotificationsService,
           useValue: mockNotificationsService,
         },
+        { provide: MediaService, useValue: mockMediaService },
       ],
     }).compile();
 
@@ -124,13 +160,17 @@ describe('HelpRequestsService', () => {
   });
 
   describe('create', () => {
+    const subject = { id: 's-1', name: 'Biology', isActive: true };
+    const created = { id: 'r-1', topic: dto.topic, media: [] };
+
+    function arrangeRequestCreated() {
+      prisma.subject.findUnique.mockResolvedValue(subject);
+      mockTx.helpRequest.create.mockResolvedValue({ id: 'r-1' });
+      prisma.helpRequest.findUniqueOrThrow.mockResolvedValue(created);
+    }
+
     it('creates the request with subject and links', async () => {
-      prisma.subject.findUnique.mockResolvedValue({
-        id: 's-1',
-        isActive: true,
-      });
-      const created = { id: 'r-1', ...dto };
-      prisma.helpRequest.create.mockResolvedValue(created);
+      arrangeRequestCreated();
 
       await expect(
         service.create('learner-1', {
@@ -138,24 +178,129 @@ describe('HelpRequestsService', () => {
           links: [{ url: 'https://example.com/video' }],
         }),
       ).resolves.toEqual(created);
-      expect(prisma.helpRequest.create).toHaveBeenCalledWith({
+      expect(mockTx.helpRequest.create).toHaveBeenCalledWith({
         data: {
           learnerId: 'learner-1',
           subjectId: 's-1',
           topic: dto.topic,
           details: dto.details,
-          links: {
-            create: [{ url: 'https://example.com/video' }],
-          },
-        },
-        include: {
-          subject: true,
-          links: true,
-          teacher: { select: { id: true, name: true } },
-          session: true,
-          feedback: true,
+          links: { create: [{ url: 'https://example.com/video' }] },
         },
       });
+      expect(mockTx.mediaUpload.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts a link as the only context', async () => {
+      arrangeRequestCreated();
+
+      await expect(
+        service.create('learner-1', {
+          subjectId: 's-1',
+          topic: 'Help me',
+          links: [{ url: 'https://example.com/video' }],
+        }),
+      ).resolves.toEqual(created);
+      expect(mockTx.helpRequest.create).toHaveBeenCalledWith({
+        data: {
+          learnerId: 'learner-1',
+          subjectId: 's-1',
+          topic: 'Help me',
+          details: undefined,
+          links: { create: [{ url: 'https://example.com/video' }] },
+        },
+      });
+    });
+
+    it('rejects a request with no context at all', async () => {
+      prisma.subject.findUnique.mockResolvedValue(subject);
+
+      await expect(
+        service.create('learner-1', {
+          subjectId: 's-1',
+          topic: 'Help me',
+          details: '   ',
+        }),
+      ).rejects.toThrow(
+        'Add at least one of: a description, a link, an image, or a voice note.',
+      );
+      expect(mockTx.helpRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a voice note without a written summary', async () => {
+      prisma.subject.findUnique.mockResolvedValue(subject);
+      mockMediaService.assertAttachable.mockResolvedValue([
+        {
+          id: 'm-1',
+          kind: 'AUDIO',
+          contentType: 'audio/webm',
+          objectKey: 'staging/u/m-1',
+        },
+      ]);
+
+      await expect(
+        service.create('learner-1', {
+          subjectId: 's-1',
+          topic: 'Help me',
+          mediaIds: ['m-1'],
+        }),
+      ).rejects.toThrow('Add a short written summary with your voice note.');
+      expect(mockTx.helpRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('attaches ready media and moves the objects', async () => {
+      arrangeRequestCreated();
+      mockMediaService.assertAttachable.mockResolvedValue([
+        {
+          id: 'm-1',
+          kind: 'IMAGE',
+          contentType: 'image/jpeg',
+          objectKey: 'staging/u/m-1',
+        },
+      ]);
+      mockMediaService.copyIntoRequests.mockResolvedValue([
+        { id: 'm-1', fromKey: 'staging/u/m-1', toKey: 'requests/m-1.jpg' },
+      ]);
+
+      await service.create('learner-1', {
+        subjectId: 's-1',
+        topic: 'Help me',
+        mediaIds: ['m-1'],
+      });
+
+      expect(mockMediaService.assertAttachable).toHaveBeenCalledWith(
+        'learner-1',
+        ['m-1'],
+      );
+      expect(mockTx.mediaUpload.update).toHaveBeenCalledWith({
+        where: { id: 'm-1' },
+        data: { requestId: 'r-1', objectKey: 'requests/m-1.jpg' },
+      });
+      expect(mockMediaService.dropStagedCopies).toHaveBeenCalled();
+    });
+
+    it('rolls the copies back when the request write fails', async () => {
+      prisma.subject.findUnique.mockResolvedValue(subject);
+      mockMediaService.assertAttachable.mockResolvedValue([
+        {
+          id: 'm-1',
+          kind: 'IMAGE',
+          contentType: 'image/jpeg',
+          objectKey: 'staging/u/m-1',
+        },
+      ]);
+      mockMediaService.copyIntoRequests.mockResolvedValue([
+        { id: 'm-1', fromKey: 'staging/u/m-1', toKey: 'requests/m-1.jpg' },
+      ]);
+      mockTx.helpRequest.create.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.create('learner-1', {
+          subjectId: 's-1',
+          topic: 'Help me',
+          mediaIds: ['m-1'],
+        }),
+      ).rejects.toThrow('db down');
+      expect(mockMediaService.rollbackCopies).toHaveBeenCalled();
     });
 
     it('rejects missing subjects', async () => {
@@ -164,7 +309,7 @@ describe('HelpRequestsService', () => {
       await expect(service.create('learner-1', dto)).rejects.toThrow(
         'Subject is not available for help requests',
       );
-      expect(prisma.helpRequest.create).not.toHaveBeenCalled();
+      expect(mockTx.helpRequest.create).not.toHaveBeenCalled();
     });
 
     it('rejects inactive subjects', async () => {
@@ -176,46 +321,13 @@ describe('HelpRequestsService', () => {
       await expect(service.create('learner-1', dto)).rejects.toThrow(
         'Subject is not available for help requests',
       );
-      expect(prisma.helpRequest.create).not.toHaveBeenCalled();
-    });
-
-    it('rejects blank details', async () => {
-      prisma.subject.findUnique.mockResolvedValue({
-        id: 's-1',
-        isActive: true,
-      });
-
-      await expect(
-        service.create('learner-1', {
-          subjectId: 's-1',
-          topic: 'Help me',
-          details: '   ',
-        }),
-      ).rejects.toThrow("Tell us a bit more about what you're stuck on.");
-      expect(prisma.helpRequest.create).not.toHaveBeenCalled();
-    });
-
-    it('rejects links-only requests without details', async () => {
-      prisma.subject.findUnique.mockResolvedValue({
-        id: 's-1',
-        isActive: true,
-      });
-
-      await expect(
-        service.create('learner-1', {
-          subjectId: 's-1',
-          topic: 'Help me',
-          details: '  ',
-          links: [{ url: 'https://example.com/video' }],
-        }),
-      ).rejects.toThrow("Tell us a bit more about what you're stuck on.");
-      expect(prisma.helpRequest.create).not.toHaveBeenCalled();
+      expect(mockTx.helpRequest.create).not.toHaveBeenCalled();
     });
   });
 
   describe('findMine', () => {
     it('returns newest first, scoped to the learner', async () => {
-      const rows = [{ id: 'r-1' }];
+      const rows = [{ id: 'r-1', media: [] }];
       prisma.helpRequest.findMany.mockResolvedValue(rows);
 
       await expect(service.findMine('learner-1')).resolves.toEqual(rows);
@@ -224,6 +336,7 @@ describe('HelpRequestsService', () => {
         include: {
           subject: true,
           links: true,
+          media: mediaSelect,
           teacher: { select: { id: true, name: true } },
           session: true,
           feedback: true,
@@ -238,6 +351,7 @@ describe('HelpRequestsService', () => {
       id: 'r-1',
       learnerId: 'learner-1',
       subjectId: 's-1',
+      media: [],
     };
 
     it('returns the request to its owner', async () => {
@@ -326,6 +440,7 @@ describe('HelpRequestsService', () => {
         },
       },
       links: true,
+      media: mediaSummarySelect,
       learner: { select: { id: true, name: true } },
     };
 
@@ -397,6 +512,7 @@ describe('HelpRequestsService', () => {
       id: 'r-1',
       status: 'OPEN',
       subjectId: 's-1',
+      media: [],
     };
 
     it('accepts an open request with session details', async () => {
@@ -533,6 +649,7 @@ describe('HelpRequestsService', () => {
       learnerId: 'learner-1',
       teacherId: null,
       status: 'OPEN',
+      media: [],
     };
 
     it('closes for the owner', async () => {
@@ -549,6 +666,7 @@ describe('HelpRequestsService', () => {
         include: {
           subject: true,
           links: true,
+          media: mediaSelect,
           learner: { select: { id: true, name: true } },
           teacher: { select: { id: true, name: true } },
           session: true,
@@ -601,6 +719,7 @@ describe('HelpRequestsService', () => {
       teacherId: 'teacher-1',
       status: 'ACCEPTED',
       session: { id: 's-1', requestId: 'r-1' },
+      media: [],
     };
 
     it('updates link and time for the assigned teacher', async () => {
@@ -687,6 +806,7 @@ describe('HelpRequestsService', () => {
       learnerId: 'learner-1',
       status: 'OPEN',
       subjectId: 's-1',
+      media: [],
     };
 
     it('updates topic and details for the owner', async () => {

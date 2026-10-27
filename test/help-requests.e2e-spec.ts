@@ -19,12 +19,17 @@ describe('HelpRequests (e2e)', () => {
     topic: 'Mitosis phases',
     details: 'Prophase vs metaphase?',
     links: [],
+    media: [],
     subject,
   };
 
   const txMock = {
     helpRequest: {
+      create: jest.fn(),
       findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    mediaUpload: {
       update: jest.fn(),
     },
     helpLink: {
@@ -56,6 +61,11 @@ describe('HelpRequests (e2e)', () => {
       create: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      update: jest.fn(),
+    },
+    mediaUpload: {
+      findMany: jest.fn(),
       update: jest.fn(),
     },
     helpLink: {
@@ -144,7 +154,8 @@ describe('HelpRequests (e2e)', () => {
 
     it('POST /api/v1/requests creates a request', async () => {
       prismaMock.subject.findUnique.mockResolvedValue(subject);
-      prismaMock.helpRequest.create.mockResolvedValue(row);
+      txMock.helpRequest.create.mockResolvedValue({ id: 'r-1' });
+      prismaMock.helpRequest.findUniqueOrThrow.mockResolvedValue(row);
 
       await request(app.getHttpServer())
         .post('/api/v1/requests')
@@ -166,8 +177,10 @@ describe('HelpRequests (e2e)', () => {
         .expect(400);
     });
 
-    it('POST rejects links-only requests', async () => {
+    it('POST accepts a link as the only context', async () => {
       prismaMock.subject.findUnique.mockResolvedValue(subject);
+      txMock.helpRequest.create.mockResolvedValue({ id: 'r-1' });
+      prismaMock.helpRequest.findUniqueOrThrow.mockResolvedValue(row);
 
       await request(app.getHttpServer())
         .post('/api/v1/requests')
@@ -176,7 +189,8 @@ describe('HelpRequests (e2e)', () => {
           topic: 'Help me',
           links: [{ url: 'https://example.com/video' }],
         })
-        .expect(400);
+        .expect(201)
+        .expect(row);
     });
 
     it('POST rejects inactive subjects', async () => {

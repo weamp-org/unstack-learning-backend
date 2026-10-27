@@ -188,6 +188,11 @@ The template uses two env files loaded in order: `.env.local` (local overrides, 
 | `VAPID_PUBLIC_KEY`             | No‡      | —                       | Web-push public key (`web-push generate-vapid-keys`); also needed by the frontend as `NEXT_PUBLIC_VAPID_PUBLIC_KEY` |
 | `VAPID_PRIVATE_KEY`            | No‡      | —                       | Web-push private key (required in production alongside the public key and subject)                                  |
 | `VAPID_SUBJECT`                | No‡      | —                       | Contact URI for push services, e.g. `mailto:hello@unstacklearning.weamp.org`                                        |
+| `R2_ACCOUNT_ID`                | Yes§     | —                       | Cloudflare account ID (used to build the endpoint when `R2_ENDPOINT` is absent)                                     |
+| `R2_ENDPOINT`                  | No§      | derived                 | S3 endpoint, `https://<account-id>.r2.cloudflarestorage.com`                                                        |
+| `R2_ACCESS_KEY_ID`             | Yes§     | —                       | R2 API token access key (Object Read & Write, scoped to the bucket)                                                 |
+| `R2_SECRET_ACCESS_KEY`         | Yes§     | —                       | R2 API token secret                                                                                                 |
+| `R2_BUCKET`                    | Yes§     | —                       | Private bucket for request media (e.g. `unstack-learning-media`)                                                    |
 | `PORT`                         | No       | `3000`                  | Application port                                                                                                    |
 | `NODE_ENV`                     | No       | `development`           | Set to `production` to disable Swagger                                                                              |
 | `LOG_LEVEL`                    | No       | `info`/`debug`          | Pino log level (`info` in production, `debug` otherwise)                                                            |
@@ -195,6 +200,7 @@ The template uses two env files loaded in order: `.env.local` (local overrides, 
 \* Required for the Clerk webhook flow, which keeps the local `User` table in sync.
 † Enforced at startup in production; falls back to `http://localhost:3001` with a warning otherwise.
 ‡ Subscribing works without VAPID keys, but sending (including `POST /push/test`) 503s; all three are enforced at startup in production.
+§ Media uploads presign directly to R2, so the app starts but `/media/*` fails without these; enforced at startup in production.
 
 ## Scripts
 
@@ -254,6 +260,14 @@ All endpoints are prefixed with `/api/v1`.
 | `GET`    | `/notifications/me/unread-count` | Any signed-in user                              | Unread total                                                                                |
 | `PATCH`  | `/notifications/me/read-all`     | Any signed-in user                              | Mark all read                                                                               |
 | `PATCH`  | `/notifications/:id/read`        | Owner only                                      | Mark one read                                                                               |
+| `PATCH`  | `/notifications/:id/archive`     | Owner only                                      | Archive one (soft delete)                                                                   |
+| `PATCH`  | `/notifications/:id/restore`     | Owner only                                      | Put an archived row back in the inbox                                                       |
+| `PATCH`  | `/notifications/me/archive-all`  | Any signed-in user                              | Archive read rows (`?readOnly=false` for all)                                               |
+| `DELETE` | `/notifications/archive`         | Any signed-in user                              | Permanently delete everything archived                                                      |
+| `DELETE` | `/notifications/:id`             | Owner only                                      | Permanently delete one archived row                                                         |
+| `POST`   | `/media/uploads`                 | Any signed-in user                              | Reserve a media upload, returns a presigned R2 PUT                                          |
+| `POST`   | `/media/uploads/:id/complete`    | Owner only                                      | Verify the uploaded object (size + magic bytes) and mark it ready                           |
+| `DELETE` | `/media/uploads/:id`             | Owner only                                      | Discard an upload that was never attached                                                   |
 | `POST`   | `/notifications/escalate`        | Admin only                                      | Manually re-notify stale `OPEN` requests (>45 min)                                          |
 | `POST`   | `/push/subscriptions`            | Any signed-in user                              | Subscribe this device                                                                       |
 | `DELETE` | `/push/subscriptions`            | Any signed-in user                              | Unsubscribe                                                                                 |

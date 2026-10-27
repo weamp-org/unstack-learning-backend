@@ -11,10 +11,12 @@ import { ClerkAuthGuard } from './clerk-auth/clerk-auth.guard.js';
 import { GlobalExceptionFilter } from './filters/global-exception.filter.js';
 import { HelpRequestsModule } from './help-requests/help-requests.module.js';
 import { LoggingMiddleware } from './logging/logging.middleware.js';
+import { MediaModule } from './media/media.module.js';
 import { pinoConfig } from './logging/pino.config.js';
 import { ALL_ROUTES } from './logging/routes.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { StorageModule } from './storage/storage.module.js';
 import { PushModule } from './push/push.module.js';
 import { UsersModule } from './users/users.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
@@ -50,6 +52,8 @@ import { TeachersModule } from './teachers/teachers.module.js';
       },
     ]),
     PrismaModule,
+    StorageModule,
+    MediaModule,
     AdminStatsModule,
     HelpRequestsModule,
     NotificationsModule,
