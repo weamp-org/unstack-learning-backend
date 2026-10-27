@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -42,6 +43,28 @@ export class NotificationsController {
   markAllRead(@UserClerkId() clerkId: string | null) {
     if (clerkId === null) throw new UnauthorizedException();
     return this.notificationsService.markAllRead(clerkId);
+  }
+
+  /**
+   * Empties the caller's inbox. `readOnly` defaults to true on the service:
+   * clearing the rows already read is the common case, and a full wipe has to
+   * be asked for explicitly.
+   *
+   * Declared before `:id` so "me" is never captured as an id.
+   */
+  @Delete()
+  clearMine(
+    @UserClerkId() clerkId: string | null,
+    @Query('readOnly') readOnly?: string,
+  ) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.notificationsService.clearMine(clerkId, readOnly !== 'false');
+  }
+
+  @Delete(':id')
+  dismiss(@UserClerkId() clerkId: string | null, @Param('id') id: string) {
+    if (clerkId === null) throw new UnauthorizedException();
+    return this.notificationsService.dismiss(clerkId, id);
   }
 
   @Patch(':id/read')

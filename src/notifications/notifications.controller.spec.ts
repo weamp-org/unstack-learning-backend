@@ -11,6 +11,8 @@ const mockNotificationsService = {
   unreadCount: jest.fn(),
   markAllRead: jest.fn(),
   markRead: jest.fn(),
+  clearMine: jest.fn(),
+  dismiss: jest.fn(),
   escalateStaleRequests: jest.fn(),
 };
 
@@ -109,6 +111,46 @@ describe('NotificationsController', () => {
       UnauthorizedException,
     );
     expect(service.markRead).not.toHaveBeenCalled();
+  });
+
+  it('clearMine defaults to read rows only', async () => {
+    service.clearMine.mockResolvedValue({ count: 3 });
+
+    await expect(controller.clearMine('user-1', undefined)).resolves.toEqual({
+      count: 3,
+    });
+    expect(service.clearMine).toHaveBeenCalledWith('user-1', true);
+  });
+
+  it('clearMine clears everything only when asked', async () => {
+    service.clearMine.mockResolvedValue({ count: 5 });
+
+    await controller.clearMine('user-1', 'false');
+    expect(service.clearMine).toHaveBeenCalledWith('user-1', false);
+  });
+
+  it('clearMine throws without a caller id', () => {
+    expect(() => controller.clearMine(null, undefined)).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.clearMine).not.toHaveBeenCalled();
+  });
+
+  it('dismiss delegates with both ids', async () => {
+    service.dismiss.mockResolvedValue({ id: 'n-1', dismissed: true });
+
+    await expect(controller.dismiss('user-1', 'n-1')).resolves.toEqual({
+      id: 'n-1',
+      dismissed: true,
+    });
+    expect(service.dismiss).toHaveBeenCalledWith('user-1', 'n-1');
+  });
+
+  it('dismiss throws without a caller id', () => {
+    expect(() => controller.dismiss(null, 'n-1')).toThrow(
+      UnauthorizedException,
+    );
+    expect(service.dismiss).not.toHaveBeenCalled();
   });
 
   it('escalate delegates to the service', async () => {
