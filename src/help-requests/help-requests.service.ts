@@ -28,7 +28,21 @@ const REQUEST_INCLUDE = {
 } as const;
 
 const QUEUE_INCLUDE = {
-  subject: true,
+  // The teacher count decides `hasTeacher` below. Teachers only ever see
+  // subjects they teach, so the flag matters to admins triaging requests
+  // that no one has claimed a subject for.
+  subject: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      _count: { select: { teachers: true } },
+    },
+  },
   links: true,
   learner: { select: { id: true, name: true } },
 } as const;
@@ -164,7 +178,14 @@ export class HelpRequestsService {
     } catch {
       // Escalation retries on the next queue read; ignore here.
     }
-    return queue;
+    // `hasTeacher` answers "can anyone act on this?" — a request in a subject
+    // with no teachers is visible to admins only, and is the one most likely
+    // to go unanswered. The raw count stays server-side.
+    return queue.map(({ subject: { _count, ...subject }, ...request }) => ({
+      ...request,
+      subject,
+      hasTeacher: _count.teachers > 0,
+    }));
   }
 
   private async requireEligibleTeacher(

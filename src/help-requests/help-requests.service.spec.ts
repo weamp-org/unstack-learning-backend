@@ -4,6 +4,10 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HelpRequestsService } from './help-requests.service.js';
 
+// Session times must be in the future; compute them so the suite does not rot.
+const FUTURE_ISO = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+const FUTURE_DATE = new Date(FUTURE_ISO);
+
 const mockPrismaService = {
   subject: {
     findUnique: jest.fn(),
@@ -297,21 +301,64 @@ describe('HelpRequestsService', () => {
   });
 
   describe('findQueue', () => {
+    const subjectFields = {
+      id: 's-1',
+      name: 'Biology',
+      slug: 'biology',
+      description: null,
+      isActive: true,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+    // Exact include the service must send: the teacher count feeds
+    // `hasTeacher` and never leaves the server.
+    const queueInclude = {
+      subject: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          description: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: { select: { teachers: true } },
+        },
+      },
+      links: true,
+      learner: { select: { id: true, name: true } },
+    };
+
     it('returns everything oldest-first for admins', async () => {
-      const rows = [{ id: 'r-1' }];
+      const rows = [
+        { id: 'r-1', subject: { ...subjectFields, _count: { teachers: 2 } } },
+      ];
       prisma.user.findUnique.mockResolvedValue({ role: 'ADMIN' });
       prisma.helpRequest.findMany.mockResolvedValue(rows);
 
-      await expect(service.findQueue('admin-1')).resolves.toEqual(rows);
+      await expect(service.findQueue('admin-1')).resolves.toEqual([
+        { id: 'r-1', subject: subjectFields, hasTeacher: true },
+      ]);
       expect(prisma.helpRequest.findMany).toHaveBeenCalledWith({
         where: { status: 'OPEN' },
-        include: {
-          subject: true,
-          links: true,
-          learner: { select: { id: true, name: true } },
-        },
+        include: queueInclude,
         orderBy: { createdAt: 'asc' },
       });
+    });
+
+    it('flags requests whose subject has no teachers', async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: 'ADMIN' });
+      prisma.helpRequest.findMany.mockResolvedValue([
+        { id: 'r-2', subject: { ...subjectFields, _count: { teachers: 0 } } },
+      ]);
+
+      const [row] = await service.findQueue('admin-1');
+      expect(row).toEqual({
+        id: 'r-2',
+        subject: subjectFields,
+        hasTeacher: false,
+      });
+      expect(row).not.toHaveProperty('subject._count');
     });
 
     it('filters to the teacher subjects', async () => {
@@ -325,11 +372,7 @@ describe('HelpRequestsService', () => {
           subject: { teachers: { some: { teacherId: 'teacher-1' } } },
           NOT: { decisions: { some: { teacherId: 'teacher-1' } } },
         },
-        include: {
-          subject: true,
-          links: true,
-          learner: { select: { id: true, name: true } },
-        },
+        include: queueInclude,
         orderBy: { createdAt: 'asc' },
       });
     });
@@ -365,7 +408,7 @@ describe('HelpRequestsService', () => {
 
       const result = await service.acceptRequest('t-1', false, 'r-1', {
         sessionUrl: 'https://meet.google.com/abc',
-        scheduledAt: '2026-10-25T14:00:00.000Z',
+        scheduledAt: FUTURE_ISO,
       });
 
       expect(result).toEqual(accepted);
@@ -382,7 +425,7 @@ describe('HelpRequestsService', () => {
         data: {
           requestId: 'r-1',
           sessionUrl: 'https://meet.google.com/abc',
-          scheduledAt: new Date('2026-10-25T14:00:00.000Z'),
+          scheduledAt: FUTURE_DATE,
           source: 'MANUAL',
         },
       });
@@ -570,14 +613,14 @@ describe('HelpRequestsService', () => {
       await expect(
         service.updateSession('teacher-1', false, 'r-1', {
           sessionUrl: 'https://meet.google.com/xyz',
-          scheduledAt: '2026-10-25T14:00:00.000Z',
+          scheduledAt: FUTURE_ISO,
         }),
       ).resolves.toEqual(updated);
       expect(prisma.helpSession.update).toHaveBeenCalledWith({
         where: { requestId: 'r-1' },
         data: {
           sessionUrl: 'https://meet.google.com/xyz',
-          scheduledAt: new Date('2026-10-25T14:00:00.000Z'),
+          scheduledAt: FUTURE_DATE,
         },
       });
     });

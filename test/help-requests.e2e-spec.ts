@@ -230,12 +230,15 @@ describe('HelpRequests (e2e)', () => {
     });
 
     it('GET /api/v1/requests/queue returns matching requests', async () => {
-      prismaMock.helpRequest.findMany.mockResolvedValue([row]);
+      // The service strips the relation count and surfaces a boolean instead.
+      prismaMock.helpRequest.findMany.mockResolvedValue([
+        { ...row, subject: { ...subject, _count: { teachers: 1 } } },
+      ]);
 
       await request(app.getHttpServer())
         .get('/api/v1/requests/queue')
         .expect(200)
-        .expect([row]);
+        .expect([{ ...row, hasTeacher: true }]);
       expect(prismaMock.helpRequest.findMany).toHaveBeenLastCalledWith(
         expect.objectContaining({
           where: {
