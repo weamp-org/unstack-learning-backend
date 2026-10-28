@@ -9,8 +9,10 @@ import {
 import {
   HelpDecision,
   HelpRequestStatus,
+  MediaKind,
   UserRole,
 } from '../generated/prisma/enums.js';
+import { MediaService } from '../media/media.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AcceptHelpRequestDto } from './dtos/accept-help-request.dto.js';
@@ -19,9 +21,25 @@ import { UpdateHelpRequestDto } from './dtos/update-help-request.dto.js';
 import { UpdateHelpSessionDto } from './dtos/update-help-session.dto.js';
 import { UpsertFeedbackDto } from './dtos/upsert-feedback.dto.js';
 
+const MEDIA_SELECT = {
+  select: {
+    id: true,
+    kind: true,
+    contentType: true,
+    byteSize: true,
+    durationSeconds: true,
+    objectKey: true,
+  },
+} as const;
+
+const MEDIA_SUMMARY_SELECT = {
+  select: { id: true, kind: true },
+} as const;
+
 const REQUEST_INCLUDE = {
   subject: true,
   links: true,
+  media: MEDIA_SELECT,
   teacher: { select: { id: true, name: true } },
   session: true,
   feedback: true,
@@ -44,12 +62,15 @@ const QUEUE_INCLUDE = {
     },
   },
   links: true,
+  // Queue cards only need counts, never bytes or signed URLs.
+  media: MEDIA_SUMMARY_SELECT,
   learner: { select: { id: true, name: true } },
 } as const;
 
 const DETAIL_INCLUDE = {
   subject: true,
   links: true,
+  media: MEDIA_SELECT,
   learner: { select: { id: true, name: true } },
   teacher: { select: { id: true, name: true } },
   session: true,
@@ -61,7 +82,26 @@ export class HelpRequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly mediaService: MediaService,
   ) {}
+
+  /// Media rows carry the object key; the API exposes short-lived URLs
+  /// instead, regenerated on every read.
+  private async withSignedMedia<
+    T extends {
+      media: {
+        id: string;
+        kind: MediaKind;
+        contentType: string;
+        byteSize: number;
+        durationSeconds: number | null;
+        objectKey: string;
+      }[];
+    },
+  >(request: T) {
+    const { media, ...rest } = request;
+    return { ...rest, media: await this.mediaService.sign(media) };
+  }
 
   async isAdmin(clerkId: string) {
     const user = await this.prisma.user.findUnique({
@@ -83,47 +123,88 @@ export class HelpRequestsService {
 
     const details = dto.details?.trim() ? dto.details.trim() : undefined;
     const links = dto.links ?? [];
-    // Details carry the request: a teacher needs the learner's own words,
-    // not just a bare link, to know where to start helping.
-    if (!details) {
+    const mediaIds = dto.mediaIds ?? [];
+
+    // Context can be words, links, images, or a voice note. Audio always needs
+    // a written summary so the request stays scannable and accessible.
+    const media =
+      mediaIds.length > 0
+        ? await this.mediaService.assertAttachable(clerkId, mediaIds)
+        : [];
+    if (
+      media.some((item) => item.kind === MediaKind.AUDIO) &&
+      details === undefined
+    ) {
       throw new BadRequestException(
-        "Tell us a bit more about what you're stuck on.",
+        'Add a short written summary with your voice note.',
+      );
+    }
+    if (details === undefined && links.length === 0 && media.length === 0) {
+      throw new BadRequestException(
+        'Add at least one of: a description, a link, an image, or a voice note.',
       );
     }
 
-    return this.prisma.helpRequest
-      .create({
-        data: {
-          learnerId: clerkId,
-          subjectId: dto.subjectId,
-          topic: dto.topic,
-          details,
-          links: { create: links },
-        },
-        include: REQUEST_INCLUDE,
-      })
-      .then(async (request) => {
-        // Best-effort: the request exists either way, so a fan-out failure
-        // must not turn creation into a 500.
-        try {
-          await this.notificationsService.notifyRequestCreated(
-            request.id,
-            dto.subjectId,
-            clerkId,
-          );
-        } catch {
-          // Notification fan-out is retried via escalation; ignore here.
+    // Copy before the insert so the transaction holds no network calls; the
+    // destination key depends on the media id, not the request id.
+    const moved =
+      media.length > 0 ? await this.mediaService.copyIntoRequests(media) : [];
+
+    let requestId: string;
+    try {
+      requestId = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.helpRequest.create({
+          data: {
+            learnerId: clerkId,
+            subjectId: dto.subjectId,
+            topic: dto.topic,
+            details,
+            links: { create: links },
+          },
+        });
+        for (const item of moved) {
+          await tx.mediaUpload.update({
+            where: { id: item.id },
+            data: { requestId: created.id, objectKey: item.toKey },
+          });
         }
-        return request;
+        return created.id;
       });
+    } catch (error) {
+      // Never leave orphaned copies behind if the row write fails.
+      await this.mediaService.rollbackCopies(moved);
+      throw error;
+    }
+    await this.mediaService.dropStagedCopies(moved);
+
+    const request = await this.prisma.helpRequest.findUniqueOrThrow({
+      where: { id: requestId },
+      include: REQUEST_INCLUDE,
+    });
+
+    // Best-effort: the request exists either way, so a fan-out failure must
+    // not turn creation into a 500.
+    try {
+      await this.notificationsService.notifyRequestCreated(
+        request.id,
+        dto.subjectId,
+        clerkId,
+      );
+    } catch {
+      // Notification fan-out is retried via escalation; ignore here.
+    }
+    return this.withSignedMedia(request);
   }
 
-  findMine(clerkId: string) {
-    return this.prisma.helpRequest.findMany({
+  async findMine(clerkId: string) {
+    const requests = await this.prisma.helpRequest.findMany({
       where: { learnerId: clerkId },
       include: REQUEST_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
+    return Promise.all(
+      requests.map((request) => this.withSignedMedia(request)),
+    );
   }
 
   async findOneFor(clerkId: string, id: string) {
@@ -132,14 +213,14 @@ export class HelpRequestsService {
       include: DETAIL_INCLUDE,
     });
     if (!request) throw new NotFoundException(`Request ${id} not found`);
-    if (request.learnerId === clerkId) return request;
-    if (request.teacherId === clerkId) return request;
+    if (request.learnerId === clerkId) return this.withSignedMedia(request);
+    if (request.teacherId === clerkId) return this.withSignedMedia(request);
 
     const user = await this.prisma.user.findUnique({
       where: { id: clerkId },
       select: { role: true },
     });
-    if (user?.role === UserRole.ADMIN) return request;
+    if (user?.role === UserRole.ADMIN) return this.withSignedMedia(request);
 
     const teaches = await this.prisma.teacherSubject.findFirst({
       where: { teacherId: clerkId, subjectId: request.subjectId },
@@ -147,7 +228,7 @@ export class HelpRequestsService {
     // 404 rather than 403: learners must not be able to probe whether
     // another learner's request exists.
     if (!teaches) throw new NotFoundException(`Request ${id} not found`);
-    return request;
+    return this.withSignedMedia(request);
   }
 
   async findQueue(clerkId: string) {
@@ -272,7 +353,7 @@ export class HelpRequestsService {
     } catch {
       // The learner sees the accepted state on refresh; ignore here.
     }
-    return accepted;
+    return accepted ? this.withSignedMedia(accepted) : accepted;
   }
 
   async declineRequest(clerkId: string, isAdmin: boolean, id: string) {
@@ -313,11 +394,12 @@ export class HelpRequestsService {
     // Same existence-hiding rule as reads: unauthorized closers get a 404.
     if (!canClose) throw new NotFoundException(`Request ${id} not found`);
     if (request.status === HelpRequestStatus.CLOSED) return request;
-    return this.prisma.helpRequest.update({
+    const updated = await this.prisma.helpRequest.update({
       where: { id },
       data: { status: HelpRequestStatus.CLOSED },
       include: DETAIL_INCLUDE,
     });
+    return this.withSignedMedia(updated);
   }
 
   async updateRequest(clerkId: string, id: string, dto: UpdateHelpRequestDto) {
@@ -382,10 +464,12 @@ export class HelpRequestsService {
       });
     }
 
-    return this.prisma.helpRequest.findUnique({
+    const updated = await this.prisma.helpRequest.findUnique({
       where: { id },
       include: DETAIL_INCLUDE,
     });
+    if (!updated) throw new NotFoundException(`Request ${id} not found`);
+    return this.withSignedMedia(updated);
   }
 
   async upsertFeedback(clerkId: string, id: string, dto: UpsertFeedbackDto) {
@@ -481,6 +565,6 @@ export class HelpRequestsService {
     } catch {
       // The learner sees the latest session on refresh; ignore here.
     }
-    return updated;
+    return updated ? this.withSignedMedia(updated) : updated;
   }
 }

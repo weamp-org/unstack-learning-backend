@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsNotEmpty,
   IsOptional,
@@ -10,6 +11,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+import { MAX_MEDIA_PER_REQUEST } from '../../media/media.constants.js';
 
 export class HelpLinkInput {
   /** Link to a page or video that shows the struggle.
@@ -39,17 +42,19 @@ export class CreateHelpRequestDto {
   @MaxLength(120)
   topic: string;
 
-  /** Free-form context (Markdown supported). Required: a teacher needs
-   * the learner's own words to know where to start.
+  /** Free-form context (Markdown supported). Optional: context can also come
+   * from links, images, or a voice note — at least one is required, and audio
+   * always needs a written summary.
    * @example 'I can do u-substitution but LIATE ordering confuses me…'
    */
   @ApiProperty({
     example: 'I can do u-substitution but LIATE ordering confuses me…',
+    required: false,
   })
   @IsString()
-  @IsNotEmpty()
   @MaxLength(5000)
-  details: string;
+  @IsOptional()
+  details?: string;
 
   /** Context links (max 3).
    */
@@ -60,4 +65,15 @@ export class CreateHelpRequestDto {
   @ArrayMaxSize(3)
   @IsOptional()
   links?: HelpLinkInput[];
+
+  /** Uploads completed through /media/uploads and not yet attached to a
+   * request (max 5, of which at most 2 audio).
+   */
+  @ApiProperty({ type: [String], required: false })
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_MEDIA_PER_REQUEST)
+  @IsString({ each: true })
+  @IsOptional()
+  mediaIds?: string[];
 }
