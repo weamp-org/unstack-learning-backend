@@ -40,6 +40,9 @@ cp .env.local.example .env.local
 
 # 4. Start PostgreSQL via Docker
 docker compose up -d
+# If 127.0.0.1:5432 is already taken by another project, put
+# `POSTGRES_PORT=5435` in a gitignored `.env` and use the same port in
+# DATABASE_URL; the compose default stays 5432.
 
 # 5. Run database migrations
 pnpm prisma migrate dev
